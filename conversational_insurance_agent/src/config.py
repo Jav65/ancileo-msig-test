@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+from pydantic import BaseSettings, Field
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
+
+class Settings(BaseSettings):
+    groq_api_key: str = Field(..., env="GROQ_API_KEY")
+    groq_model: str = Field("llama-3.1-70b-versatile", env="GROQ_MODEL")
+    redis_url: str = Field("redis://localhost:6379/0", env="REDIS_URL")
+    vector_db_path: Path = Field(BASE_DIR / "../data/vector_store", env="VECTOR_DB_PATH")
+    claims_data_path: Path = Field(BASE_DIR / "../data/claims_stats.parquet", env="CLAIMS_DATA_PATH")
+    stripe_api_key: str = Field("", env="STRIPE_API_KEY")
+    stripe_webhook_secret: str = Field("", env="STRIPE_WEBHOOK_SECRET")
+    payments_base_url: str = Field("http://localhost:8086", env="PAYMENTS_BASE_URL")
+    payment_status_url: str = Field("http://localhost:8086/payments", env="PAYMENT_STATUS_URL")
+    taxonomy_path: Path = Field(BASE_DIR / "../Taxonomy/Taxonomy_Hackathon.json", env="TAXONOMY_PATH")
+    policy_documents_dir: Path = Field(BASE_DIR / "../Policy_Wordings", env="POLICY_DOCUMENTS_DIR")
+
+    class Config:
+        env_file = BASE_DIR / ".env"
+        env_file_encoding = "utf-8"
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
