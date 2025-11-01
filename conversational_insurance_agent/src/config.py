@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     payment_status_url: str = Field("http://localhost:8086/payments", env="PAYMENT_STATUS_URL")
     taxonomy_path: Path = Field(BASE_DIR / "../Taxonomy/Taxonomy_Hackathon.json", env="TAXONOMY_PATH")
     policy_documents_dir: Path = Field(BASE_DIR / "../Policy_Wordings", env="POLICY_DOCUMENTS_DIR")
-    twilio_account_sid: str = Field("", env="TWILIO_ACCOUNT_SID")
+    twilio_account_sid: str = Field("", env=["TWILIO_ACCOUNT_SID", "TWILIO_SID"])
     twilio_auth_token: str = Field("", env="TWILIO_AUTH_TOKEN")
     twilio_whatsapp_number: str = Field("", env="TWILIO_WHATSAPP_NUMBER")
 
