@@ -9,11 +9,17 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
+try:  # pragma: no cover - pydantic v2 optional
+    from pydantic import ConfigDict
+except ImportError:  # pragma: no cover - pydantic v1 fallback
+    ConfigDict = None  # type: ignore[misc, assignment]
+
 from .channels.whatsapp import WhatsAppMessage
 from .config import Settings, get_settings
 from .core.orchestrator import ConversationalOrchestrator
 from .core.setup import build_orchestrator
 from .services.media_ingestion import GroqMediaIngestor, MediaAttachment
+from .state.client_context import ClientDatum
 from .utils.logging import configure_logging, logger
 
 
@@ -22,6 +28,17 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User utterance")
     channel: str = Field("web", description="Channel identifier such as web, whatsapp, telegram")
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    clients: List[ClientDatum] = Field(
+        default_factory=list,
+        alias="clientData",
+        description="Known traveller details supplied by the integrating partner",
+    )
+
+    if ConfigDict:  # pragma: no branch
+        model_config = ConfigDict(populate_by_name=True)
+
+    class Config:  # pragma: no cover - pydantic v1 compatibility
+        allow_population_by_field_name = True
 
 class ToolRun(BaseModel):
     name: str
@@ -86,6 +103,13 @@ async def chat_endpoint(
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
+    if payload.clients:
+        orchestrator.merge_clients(
+            session_id=payload.session_id,
+            clients=payload.clients,
+            source=payload.channel,
+        )
+
     response = await orchestrator.handle_message(
         session_id=payload.session_id,
         user_message=payload.message,
@@ -139,6 +163,19 @@ async def whatsapp_webhook(
     form_data = await request.form()
     payload: Dict[str, str] = {key: value for key, value in form_data.items()}
     message = WhatsAppMessage.from_twilio_payload(payload)
+
+    metadata = message.metadata or {}
+    profile_name = metadata.get("ProfileName") or metadata.get("profile_name")
+    whatsapp_client = ClientDatum(
+        client_id=message.wa_id or message.sender,
+        source="whatsapp",
+        personal_info={
+            "name": profile_name,
+            "phone_number": message.sender,
+        },
+        extra={"whatsapp": {"metadata": metadata}},
+    )
+    orchestrator.merge_clients(message.session_id, [whatsapp_client], source="whatsapp")
 
     logger.info(
         "whatsapp_webhook.received",
