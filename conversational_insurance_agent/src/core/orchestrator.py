@@ -8,6 +8,7 @@ from uuid import uuid4
 from groq import Groq
 
 from ..config import get_settings
+from ..state.client_context import ClientDatum
 from ..state.session_store import ConversationSessionStore
 from ..utils.logging import logger
 from .tooling import ToolSpec
@@ -29,6 +30,9 @@ class ConversationalOrchestrator:
         self._client = Groq(api_key=self._settings.groq_api_key)
         self._session_store = ConversationSessionStore()
         self._tool_map = {tool.name: tool for tool in tools}
+
+    def merge_clients(self, session_id: str, clients: List[ClientDatum], source: Optional[str] = None) -> None:
+        self._session_store.merge_clients(session_id, clients, source)
 
     async def handle_message(
         self, *, session_id: str, user_message: str, channel: str
@@ -59,6 +63,7 @@ class ConversationalOrchestrator:
         logger.info("orchestrator.invoke", channel=channel, session_id=session_id)
 
         self._session_store.append_message(session_id, "user", user_message)
+        self._session_store.try_mark_verification(session_id, user_message)
 
         tool_runs: List[Dict[str, Any]] = []
         max_rounds = 6
@@ -111,6 +116,29 @@ class ConversationalOrchestrator:
                         sequence=index,
                         total=len(actions),
                     )
+
+                    if tool_name == "payment_checkout":
+                        readiness = self._session_store.evaluate_payment_readiness(session_id)
+                        if readiness.get("status") != "ready":
+                            logger.info(
+                                "orchestrator.payment_guard_block",
+                                session_id=session_id,
+                                status=readiness.get("status"),
+                            )
+                            guard_reply = self._compose_payment_guard_reply(readiness)
+                            if readiness.get("status") == "unverified":
+                                self._session_store.request_verification(
+                                    session_id,
+                                    readiness.get("client_id"),
+                                    readiness.get("fields", {}),
+                                )
+                            self._session_store.append_message(session_id, "assistant", guard_reply)
+                            return {
+                                "reply": guard_reply,
+                                "tool_used": None,
+                                "tool_result": None,
+                                "tool_runs": tool_runs,
+                            }
 
                     tool_result = await tool_spec.arun(**tool_input)
                     tool_call_id = action.get("tool_call_id") or f"toolcall-{uuid4().hex}"
@@ -171,6 +199,60 @@ class ConversationalOrchestrator:
             "tool_result": None,
             "tool_runs": tool_runs,
         }
+
+    @staticmethod
+    def _compose_payment_guard_reply(readiness: Dict[str, Any]) -> str:
+        status = readiness.get("status")
+
+        if status == "missing_clients":
+            return (
+                "Before we can secure a policy, I need the traveller's profile - "
+                "name, contacts, passport and trip itinerary. "
+                "Please share those details, or pass them through the integration payload."
+            )
+
+        if status == "missing_fields":
+            missing = readiness.get("missing", [])
+            if isinstance(missing, list) and missing:
+                if len(missing) == 1:
+                    fields_text = missing[0]
+                else:
+                    fields_text = ", ".join(missing[:-1]) + f" and {missing[-1]}"
+            else:
+                fields_text = "some required fields"
+            return (
+                "I still need a few details before the payment step: "
+                f"{fields_text}. Once you share them, I can prepare checkout."
+            )
+
+        if status == "unverified":
+            fields = readiness.get("fields", {})
+            lines = []
+            label_map = {
+                "name": "Name",
+                "destination": "Destination",
+                "trip_type": "Trip type",
+                "trip_cost": "Trip cost",
+                "travel_dates": "Travel dates",
+                "email_address": "Email",
+                "phone_number": "Phone",
+                "passport_number": "Passport number",
+            }
+            for key, label in label_map.items():
+                value = fields.get(key)
+                if value:
+                    lines.append(f"- {label}: {value}")
+            summary = "\n".join(lines) if lines else "- Traveller details on file"
+            return (
+                "Let's double-check the traveller info before payment:\n"
+                f"{summary}\n"
+                "Please confirm everything is correct (a simple 'Confirmed' works) so I can continue."
+            )
+
+        return (
+            "I need a complete and confirmed traveller profile before creating the checkout link. "
+            "Could you review the details and update anything that's missing?"
+        )
 
     async def _generate_response(self, messages: List[Dict[str, str]]) -> str:
         response = await asyncio.to_thread(
