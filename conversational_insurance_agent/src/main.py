@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import html
 
@@ -29,8 +29,16 @@ class ToolRun(BaseModel):
     result: Any
     tool_call_id: Optional[str] = None
 
+
+class ActionRequest(BaseModel):
+    tool: str
+    input: Dict[str, Any] = Field(default_factory=dict)
+    tool_call_id: Optional[str] = None
+
+
 class ChatResponse(BaseModel):
-    reply: str
+    output: str
+    actions: List[ActionRequest] = Field(default_factory=list)
     tool_used: Optional[str] = None
     tool_result: Optional[Any] = None
     tool_runs: List[ToolRun] = Field(default_factory=list)
@@ -175,7 +183,7 @@ async def whatsapp_webhook(
         channel="whatsapp",
     )
 
-    reply_text = response["reply"]
+    reply_text = response.get("output", "")
     twiml = _render_twiml(reply_text)
     return Response(content=twiml, media_type="application/xml")
 
@@ -198,7 +206,7 @@ async def telegram_webhook(
         user_message=payload.text,
         channel="telegram",
     )
-    return {"reply": response["reply"]}
+    return {"output": response.get("output", "")}
 
 
 if __name__ == "__main__":
