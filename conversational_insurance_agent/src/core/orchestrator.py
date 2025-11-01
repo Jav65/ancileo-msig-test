@@ -15,12 +15,12 @@ from .tooling import ToolSpec
 
 TOOL_INSTRUCTION = (
     "You have access to specialized tools.\n"
-    "Always respond ONLY with a JSON object shaped as:\n"
+    "Respond using a JSON object shaped as:\n"
     '{"output": "<assistant reply or empty string>", "actions": [{"tool": "tool_name", "input": { ... }}]}\n'
     "List every required tool in execution order inside the actions array.\n"
     "When you need to call tools, set `output` to an empty string and populate `actions`.\n"
     "After tool results are available, produce the final answer by setting `output` and an empty `actions` array.\n"
-    "Never include text outside the JSON payload, and always cite policy sources in `output` when giving direct answers."
+    "Always cite policy sources in `output` when giving direct answers."
 )
 
 
@@ -68,11 +68,18 @@ class ConversationalOrchestrator:
         while turn < max_rounds:
             turn += 1
             reply = await self._generate_response(messages)
-            parsed = self._try_parse_json(reply)
-            actions = self._extract_actions(parsed)
+            payload = self._coerce_json_payload(
+                reply=reply,
+                session_id=session_id,
+                turn=turn,
+            )
+            actions = self._extract_actions(payload)
+            payload["actions"] = actions
+            payload["output"] = self._normalize_output(payload.get("output"))
+            serialized_payload = json.dumps(payload, ensure_ascii=False)
 
             if actions:
-                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "assistant", "content": serialized_payload})
 
                 for index, action in enumerate(actions, start=1):
                     tool_name = action.get("tool")
@@ -135,34 +142,10 @@ class ConversationalOrchestrator:
                 # loop to let the assistant incorporate tool outputs
                 continue
 
-            if parsed is not None:
-                output_value = parsed.get("output", "")
-                if isinstance(output_value, str):
-                    assistant_output = output_value
-                elif output_value is None:
-                    assistant_output = ""
-                else:
-                    assistant_output = str(output_value)
-
-                normalized_actions = actions if isinstance(parsed.get("actions"), list) else []
-                return self._finalize_response(
-                    session_id=session_id,
-                    output=assistant_output,
-                    actions=normalized_actions,
-                    tool_runs=tool_runs,
-                )
-
-            logger.warning(
-                "orchestrator.non_json_reply",
-                session_id=session_id,
-                turn=turn,
-                reply_preview=reply[:200],
-            )
-
             return self._finalize_response(
                 session_id=session_id,
-                output=reply,
-                actions=[],
+                output=payload.get("output", ""),
+                actions=actions,
                 tool_runs=tool_runs,
             )
 
@@ -217,6 +200,7 @@ class ConversationalOrchestrator:
             messages=messages,
             temperature=0.2,
             max_tokens=900,
+            response_format={"type": "json_object"},
         )
 
         choice = response.choices[0]
@@ -248,3 +232,59 @@ class ConversationalOrchestrator:
             ]
 
         return []
+
+    def _coerce_json_payload(
+        self,
+        *,
+        reply: str,
+        session_id: str,
+        turn: int,
+    ) -> Dict[str, Any]:
+        if not reply:
+            return {"output": "", "actions": []}
+
+        parsed = self._try_parse_json(reply)
+
+        if parsed is None:
+            logger.warning(
+                "orchestrator.non_json_reply_coerced",
+                session_id=session_id,
+                turn=turn,
+                reply_preview=reply[:200],
+            )
+            return {"output": reply, "actions": []}
+
+        if not isinstance(parsed, dict):
+            logger.warning(
+                "orchestrator.unexpected_json_type",
+                session_id=session_id,
+                turn=turn,
+                received_type=type(parsed).__name__,
+            )
+            if isinstance(parsed, str):
+                return {"output": parsed, "actions": []}
+
+            try:
+                serialized = json.dumps(parsed, ensure_ascii=False)
+            except (TypeError, ValueError):
+                serialized = str(parsed)
+
+            return {"output": serialized, "actions": []}
+
+        return dict(parsed)
+
+    @staticmethod
+    def _normalize_output(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+
+        if value is None:
+            return ""
+
+        try:
+            if isinstance(value, (dict, list)):
+                return json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            pass
+
+        return str(value)
