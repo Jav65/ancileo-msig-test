@@ -5,6 +5,7 @@ python-dotenv
 httpx
 redis
 groq
+jsonschema
 langchain
 langchain-community
 langchain-groq
