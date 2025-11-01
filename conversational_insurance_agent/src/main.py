@@ -36,9 +36,9 @@ class ChatRequest(BaseModel):
 
     if ConfigDict:  # pragma: no branch
         model_config = ConfigDict(populate_by_name=True)
-
-    class Config:  # pragma: no cover - pydantic v1 compatibility
-        allow_population_by_field_name = True
+    else:  # pragma: no cover - pydantic v1 compatibility
+        class Config:
+            allow_population_by_field_name = True
 
 class ToolRun(BaseModel):
     name: str
