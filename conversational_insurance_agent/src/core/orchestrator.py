@@ -236,14 +236,21 @@ class ConversationalOrchestrator:
             missing = readiness.get("missing", [])
             if isinstance(missing, list) and missing:
                 if len(missing) == 1:
-                    fields_text = missing[0]
-                else:
-                    fields_text = ", ".join(missing[:-1]) + f" and {missing[-1]}"
-            else:
-                fields_text = "some required fields"
+                    field_label = missing[0]
+                    return (
+                        "I'm almost ready to set up payment?could you share "
+                        f"the {field_label.lower()} so I can proceed?"
+                    )
+
+                fields_text = ", ".join(missing[:-1]) + f" and {missing[-1]}"
+                return (
+                    "I still need a few details before the payment step: "
+                    f"{fields_text}. Once you share them, I can prepare checkout."
+                )
+
             return (
-                "I still need a few details before the payment step: "
-                f"{fields_text}. Once you share them, I can prepare checkout."
+                "I still need a required detail before the payment step. "
+                "Let me know once it's available so I can prepare checkout."
             )
 
         if status == "unverified":
