@@ -38,6 +38,7 @@ class GroqMediaIngestor:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self._settings = settings or get_settings()
         self._client = Groq(api_key=self._settings.groq_api_key)
+        self._missing_twilio_auth_logged = False
 
     async def analyse(self, attachments: List[MediaAttachment]) -> List[str]:
         if not attachments:
@@ -96,15 +97,32 @@ class GroqMediaIngestor:
         )
         return f"Received unsupported media type {attachment.content_type}."
 
-    async def _download(self, url: str) -> bytes:
-        auth: Optional[httpx.Auth] = None
+    def _build_twilio_auth(self) -> Optional[httpx.Auth]:
         if self._settings.twilio_account_sid and self._settings.twilio_auth_token:
-            auth = httpx.BasicAuth(
+            return httpx.BasicAuth(
                 self._settings.twilio_account_sid,
                 self._settings.twilio_auth_token,
             )
+        if self._settings.twilio_api_key and self._settings.twilio_api_secret:
+            return httpx.BasicAuth(
+                self._settings.twilio_api_key,
+                self._settings.twilio_api_secret,
+            )
+        return None
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+    async def _download(self, url: str) -> bytes:
+        auth = self._build_twilio_auth()
+        if auth is None and not self._missing_twilio_auth_logged:
+            self._missing_twilio_auth_logged = True
+            logger.warning(
+                "groq_media.twilio_credentials_missing",
+                has_account_sid=bool(self._settings.twilio_account_sid),
+                has_auth_token=bool(self._settings.twilio_auth_token),
+                has_api_key=bool(self._settings.twilio_api_key),
+                has_api_secret=bool(self._settings.twilio_api_secret),
+            )
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.get(url, auth=auth)
             try:
                 response.raise_for_status()

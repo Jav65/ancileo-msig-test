@@ -40,7 +40,7 @@ conversational_insurance_agent/
    - `GROQ_VISION_MODEL` (defaults to `llama-3.2-90b-vision-preview`)
    - `STRIPE_API_KEY` and `STRIPE_WEBHOOK_SECRET` (leave blank to rely on the provided payments microservice)
    - `REDIS_URL`, `VECTOR_DB_PATH`, `CLAIMS_DATA_PATH` as needed
-   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` for WhatsApp
+   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` for WhatsApp (or `TWILIO_API_KEY`/`TWILIO_API_SECRET` if you prefer API keys)
 
 3. **Prepare Redis**
    ```bash
