@@ -37,8 +37,10 @@ conversational_insurance_agent/
 
 2. **Configure environment** - update `.env` with valid credentials.
    - `GROQ_API_KEY` and (optionally) `GROQ_MODEL`
+   - `GROQ_VISION_MODEL` (defaults to `llama-3.2-90b-vision-preview`)
    - `STRIPE_API_KEY` and `STRIPE_WEBHOOK_SECRET` (leave blank to rely on the provided payments microservice)
    - `REDIS_URL`, `VECTOR_DB_PATH`, `CLAIMS_DATA_PATH` as needed
+   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` for WhatsApp
 
 3. **Prepare Redis**
    ```bash
@@ -59,7 +61,7 @@ conversational_insurance_agent/
 
 ## Core Endpoints
 - `POST /chat` - channel-agnostic message handler (web, mobile, partner apps)
-- `POST /webhooks/whatsapp` - Twilio webhook adapter (expects JSON-mapped request)
+- `POST /webhooks/whatsapp` - Twilio webhook adapter (consumes `application/x-www-form-urlencoded` payloads with optional media)
 - `POST /webhooks/telegram` - Telegram bot webhook adapter
 - `POST /tools/policy/index` - asynchronous rebuild of the policy vector store
 - `GET /healthz` - service readiness check
@@ -77,7 +79,7 @@ The orchestrator instructs the LLM to emit JSON whenever a tool call is required
 
 ## Channel Integrations
 - **Web / Mobile** - call `POST /chat` with a stable `session_id` per user/device.
-- **WhatsApp** - expose `/webhooks/whatsapp`, configure Twilio to forward inbound messages, optionally use `channels/whatsapp.py` to parse form data.
+- **WhatsApp** - expose `/webhooks/whatsapp`, configure Twilio to forward inbound messages, and provide Twilio credentials so media can be downloaded. Image/PDF attachments are summarised with Groq before being forwarded to the orchestrator.
 - **Telegram** - point Bot API webhook to `/webhooks/telegram`; `channels/telegram.py` helps translate raw updates.
 
 Persisting the session ID ensures Redis-backed memory keeps context even when users switch devices or channels.
