@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from groq import Groq
 
@@ -71,10 +72,12 @@ class ConversationalOrchestrator:
                 payload=tool_input,
             )
             tool_result = await tool_spec.arun(**tool_input)
+            tool_call_id = parsed.get("tool_call_id") or f"toolcall-{uuid4().hex}"
             tool_message = {
                 "role": "tool",
                 "name": tool_name,
                 "content": json.dumps(tool_result, ensure_ascii=False),
+                "tool_call_id": tool_call_id,
             }
 
             # store tool result for future reference
