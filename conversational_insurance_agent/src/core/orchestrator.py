@@ -15,11 +15,12 @@ from .tooling import ToolSpec
 
 TOOL_INSTRUCTION = (
     "You have access to specialized tools.\n"
-    "If tools are required, respond ONLY with a JSON object that matches:\n"
-    '{"actions": [{"tool": "tool_name", "input": { ... }}]}\n'
-    "List every required tool in execution order within the array.\n"
-    "After receiving tool results, use a concise_and_recommend reasoning step before replying,"
-    " and always cite sources from policy documents when answering directly."
+    "Always respond ONLY with a JSON object shaped as:\n"
+    '{"output": "<assistant reply or empty string>", "actions": [{"tool": "tool_name", "input": { ... }}]}\n'
+    "List every required tool in execution order inside the actions array.\n"
+    "When you need to call tools, set `output` to an empty string and populate `actions`.\n"
+    "After tool results are available, produce the final answer by setting `output` and an empty `actions` array.\n"
+    "Never include text outside the JSON payload, and always cite policy sources in `output` when giving direct answers."
 )
 
 
@@ -94,13 +95,12 @@ class ConversationalOrchestrator:
                             "I'm sorry, I can't access the requested capability right now. "
                             "Could you try rephrasing your question?"
                         )
-                        self._session_store.append_message(session_id, "assistant", failure_reply)
-                        return {
-                            "reply": failure_reply,
-                            "tool_used": None,
-                            "tool_result": None,
-                            "tool_runs": tool_runs,
-                        }
+                        return self._finalize_response(
+                            session_id=session_id,
+                            output=failure_reply,
+                            actions=[],
+                            tool_runs=tool_runs,
+                        )
 
                     tool_input = action.get("input", {})
                     logger.info(
@@ -120,7 +120,7 @@ class ConversationalOrchestrator:
                         "content": json.dumps(tool_result, ensure_ascii=False),
                         "tool_call_id": tool_call_id,
                     }
-                
+
                     self._session_store.set_tool_result(session_id, tool_name, tool_result)
                     messages.append(tool_message)
                     tool_runs.append(
@@ -135,25 +135,36 @@ class ConversationalOrchestrator:
                 # loop to let the assistant incorporate tool outputs
                 continue
 
-            if parsed is not None and "actions" in parsed and not actions:
-                logger.info(
-                    "orchestrator.no_tool_actions",
+            if parsed is not None:
+                output_value = parsed.get("output", "")
+                if isinstance(output_value, str):
+                    assistant_output = output_value
+                elif output_value is None:
+                    assistant_output = ""
+                else:
+                    assistant_output = str(output_value)
+
+                normalized_actions = actions if isinstance(parsed.get("actions"), list) else []
+                return self._finalize_response(
                     session_id=session_id,
-                    turn=turn,
+                    output=assistant_output,
+                    actions=normalized_actions,
+                    tool_runs=tool_runs,
                 )
-                messages.append({"role": "assistant", "content": reply})
-                continue
-            
-            # no actions detected; treat reply as the final assistant message
-            self._session_store.append_message(session_id, "assistant", reply)
-            last_tool = tool_runs[-1]["name"] if tool_runs else None
-            last_result = tool_runs[-1]["result"] if tool_runs else None
-            return {
-                "reply": reply,
-                "tool_used": last_tool,
-                "tool_result": last_result,
-                "tool_runs": tool_runs,
-            }
+
+            logger.warning(
+                "orchestrator.non_json_reply",
+                session_id=session_id,
+                turn=turn,
+                reply_preview=reply[:200],
+            )
+
+            return self._finalize_response(
+                session_id=session_id,
+                output=reply,
+                actions=[],
+                tool_runs=tool_runs,
+            )
 
         logger.error(
             "orchestrator.max_rounds_exceeded",
@@ -164,11 +175,38 @@ class ConversationalOrchestrator:
             "I'm sorry, I'm having trouble completing that request right now. "
             "Let's try again in a moment."
         )
-        self._session_store.append_message(session_id, "assistant", failure_reply)
+        return self._finalize_response(
+            session_id=session_id,
+            output=failure_reply,
+            actions=[],
+            tool_runs=tool_runs,
+        )
+
+    def _finalize_response(
+        self,
+        *,
+        session_id: str,
+        output: str,
+        actions: Optional[List[Dict[str, Any]]],
+        tool_runs: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        normalized_actions = list(actions or [])
+        output_text = output if isinstance(output, str) else str(output)
+        payload = {"output": output_text, "actions": normalized_actions}
+        self._session_store.append_message(
+            session_id,
+            "assistant",
+            json.dumps(payload, ensure_ascii=False),
+        )
+
+        last_tool = tool_runs[-1]["name"] if tool_runs else None
+        last_result = tool_runs[-1]["result"] if tool_runs else None
+
         return {
-            "reply": failure_reply,
-            "tool_used": None,
-            "tool_result": None,
+            "output": output_text,
+            "actions": normalized_actions,
+            "tool_used": last_tool,
+            "tool_result": last_result,
             "tool_runs": tool_runs,
         }
 
