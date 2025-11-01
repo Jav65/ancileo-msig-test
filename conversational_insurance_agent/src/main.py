@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import html
+import os
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
 
-import html
-
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
@@ -19,6 +30,7 @@ from .config import Settings, get_settings
 from .core.orchestrator import ConversationalOrchestrator
 from .core.setup import build_orchestrator
 from .services.media_ingestion import GroqMediaIngestor, MediaAttachment
+from .services.policy_taxonomy import IngestCfg, PolicyIngestor, extract_all_layers
 from .state.client_context import ClientDatum
 from .utils.logging import configure_logging, logger
 
@@ -66,6 +78,12 @@ class IngestRequest(BaseModel):
     refresh: bool = False
 
 
+class TaxonomyExtractionResponse(BaseModel):
+    layer_1_general_conditions: List[Dict[str, Any]]
+    layer_2_benefits: List[Dict[str, Any]]
+    layer_3_benefit_conditions: List[Dict[str, Any]]
+
+
 class TelegramWebhook(BaseModel):
     chat_id: str
     text: str
@@ -76,6 +94,7 @@ configure_logging()
 app = FastAPI(title="Ancileo Conversational Insurance Platform", version="0.1.0")
 _orchestrator: ConversationalOrchestrator | None = None
 _media_ingestor: GroqMediaIngestor | None = None
+_policy_ingestor: PolicyIngestor | None = None
 
 
 def get_orchestrator() -> ConversationalOrchestrator:
@@ -94,6 +113,14 @@ def get_media_ingestor() -> GroqMediaIngestor:
     if _media_ingestor is None:
         _media_ingestor = GroqMediaIngestor(get_settings())
     return _media_ingestor
+
+
+def get_policy_ingestor(settings: Settings = Depends(get_config)) -> PolicyIngestor:
+    global _policy_ingestor
+    if _policy_ingestor is None:
+        cfg = IngestCfg.from_settings(settings)
+        _policy_ingestor = PolicyIngestor(cfg=cfg)
+    return _policy_ingestor
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -142,6 +169,54 @@ async def healthcheck(settings: Settings = Depends(get_config)) -> Dict[str, Any
         "groq_model": settings.groq_model,
         "payments_base_url": settings.payments_base_url,
     }
+
+
+@app.post("/taxonomy/extract", response_model=TaxonomyExtractionResponse)
+async def extract_taxonomy_endpoint(
+    product_label: str = Form(..., description="Identifier used for the product taxonomy"),
+    pdf: UploadFile = File(..., description="Travel insurance policy PDF"),
+    ingestor: PolicyIngestor = Depends(get_policy_ingestor),
+):
+    if not product_label.strip():
+        raise HTTPException(status_code=400, detail="product_label cannot be empty")
+
+    filename = (pdf.filename or "").lower()
+    content_type = (pdf.content_type or "").lower()
+    if not filename.endswith(".pdf") and "pdf" not in content_type:
+        raise HTTPException(status_code=415, detail="Only PDF policy documents are supported")
+
+    data = await pdf.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded PDF is empty")
+
+    temp_path: str | None = None
+    try:
+        with NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(data)
+            temp_path = tmp_file.name
+
+        result = await run_in_threadpool(
+            extract_all_layers,
+            temp_path,
+            product_label.strip(),
+            ingestor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.exception("policy_taxonomy.extraction_failed", error=str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to extract taxonomy from policy PDF",
+        ) from exc
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:  # pragma: no cover - non-critical cleanup failure
+                logger.warning("policy_taxonomy.cleanup_failed", path=temp_path)
+
+    return TaxonomyExtractionResponse(**result)
 
 
 @app.post("/webhooks/whatsapp", response_class=Response)
