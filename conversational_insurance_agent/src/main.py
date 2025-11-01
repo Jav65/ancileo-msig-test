@@ -23,11 +23,17 @@ class ChatRequest(BaseModel):
     channel: str = Field("web", description="Channel identifier such as web, whatsapp, telegram")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+class ToolRun(BaseModel):
+    name: str
+    input: Dict[str, Any]
+    result: Any
+    tool_call_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     reply: str
     tool_used: Optional[str] = None
-    tool_result: Optional[Dict[str, Any]] = None
+    tool_result: Optional[Any] = None
+    tool_runs: List[ToolRun] = Field(default_factory=list)
 
 
 class IngestRequest(BaseModel):
