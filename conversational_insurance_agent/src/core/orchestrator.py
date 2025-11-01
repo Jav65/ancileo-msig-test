@@ -15,7 +15,7 @@ from .tooling import ToolSpec
 
 TOOL_INSTRUCTION = (
     "You have access to specialized tools.\n"
-    "If a tool is required, respond ONLY with a JSON object that matches:\n"
+    "If a tool is required, respond ONLY and ONLY with a JSON object that matches:\n"
     '{"action": "tool_name", "input": { ... }}\n'
     "Always cite sources from policy documents when answering directly."
 )
@@ -42,7 +42,7 @@ class ConversationalOrchestrator:
         system_message = {
             "role": "system",
             "content": (
-                "You are Aurora, an empathetic travel insurance concierge. "
+                "You are Aurora, an empathetic travel insurance concierge. Don't sounds like AI!"
                 "Adapt tone to the user's emotion, maintain concise yet thorough answers, "
                 "and always explain reasoning with citations when referencing policies.\n\n"
                 f"Channel: {channel}.\n"
