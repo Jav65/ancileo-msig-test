@@ -1,40 +1,65 @@
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from ..agents import PolicyResearchAgent
 from ..services.payment import PaymentGateway
 from ..tools.claims_insights import ClaimsInsightTool
 from ..tools.document_intelligence import DocumentIntelligenceTool
-from ..tools.policy_rag import PolicyRAGTool
 from ..utils.logging import logger
 from .orchestrator import ConversationalOrchestrator
 from .tooling import ToolSpec
 
 
 def build_orchestrator() -> ConversationalOrchestrator:
-    policy_tool = PolicyRAGTool()
+    policy_agent = PolicyResearchAgent()
     claims_tool = ClaimsInsightTool()
     doc_tool = DocumentIntelligenceTool()
     payment_gateway = PaymentGateway()
 
-    try:
-        policy_tool.ensure_index()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("policy_rag.ensure_index_failed", error=str(exc))
-
     tools: List[ToolSpec] = [
         ToolSpec(
-            name="policy_lookup",
-            description="Retrieve relevant policy passages with citations for a user question.",
+            name="policy_research",
+            description="Agentic policy researcher that maps recommended products to eligible benefits.",
             schema={
                 "type": "object",
                 "properties": {
-                    "question": {"type": "string", "description": "User query about coverage"},
-                    "top_k": {"type": "integer", "minimum": 1, "maximum": 10, "default": 4},
+                    "user_query": {
+                        "type": "string",
+                        "description": "Latest user request the agent should address",
+                    },
+                    "recommended_products": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Names of products the user is eligible for",
+                    },
+                    "tiers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Corresponding tier labels for each product",
+                    },
+                    "chat_history": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "speaker": {"type": "string"},
+                                "message": {"type": "string"},
+                            },
+                            "required": ["speaker", "message"],
+                        },
+                        "description": "Optional recent conversation snippets to provide context",
+                    },
                 },
-                "required": ["question"],
+                "required": ["user_query", "recommended_products", "tiers"],
             },
-            handler=policy_tool.query,
+            handler=lambda user_query, recommended_products, tiers, chat_history=None: _run_policy_agent(
+                policy_agent,
+                user_query=user_query,
+                recommended_products=recommended_products,
+                tiers=tiers,
+                chat_history=chat_history,
+            ),
         ),
         ToolSpec(
             name="claims_recommendation",
@@ -103,3 +128,50 @@ def build_orchestrator() -> ConversationalOrchestrator:
     ]
 
     return ConversationalOrchestrator(tools)
+
+
+def _run_policy_agent(
+    agent: PolicyResearchAgent,
+    *,
+    user_query: str,
+    recommended_products: List[str] | Sequence[str],
+    tiers: List[str] | Sequence[str],
+    chat_history: Optional[Sequence[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    if isinstance(recommended_products, (str, bytes)):
+        recommended_products = [recommended_products]
+    if isinstance(tiers, (str, bytes)):
+        tiers = [tiers]
+
+    history_tuples: List[Tuple[str, str]] = []
+    if chat_history:
+        for entry in chat_history:
+            if isinstance(entry, dict):
+                speaker = str(entry.get("speaker") or entry.get("role") or "unknown")
+                message = str(entry.get("message") or entry.get("content") or "")
+                history_tuples.append((speaker, message))
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                speaker = str(entry[0])
+                message = str(entry[1])
+                history_tuples.append((speaker, message))
+
+    result = agent.run(
+        user_query=user_query,
+        recommended_products=list(recommended_products),
+        tiers=list(tiers),
+        chat_history=history_tuples,
+    )
+
+    payload = {
+        "products": result.products,
+        "reasoning": result.reasoning,
+        "raw": result.raw,
+    }
+
+    logger.info(
+        "policy_research_agent.completed",
+        products=len(result.products),
+        has_reasoning=bool(result.reasoning),
+    )
+
+    return payload
