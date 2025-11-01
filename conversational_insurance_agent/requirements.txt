@@ -7,6 +7,8 @@ redis
 groq
 langchain
 langchain-community
+langchain-groq
+langgraph
 chromadb
 sentence-transformers
 pdfplumber
@@ -18,3 +20,5 @@ scikit-learn
 orjson
 structlog
 stripe
+PyYAML
+pytest

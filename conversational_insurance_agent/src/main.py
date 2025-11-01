@@ -125,25 +125,14 @@ async def rebuild_policy_index(
     request: IngestRequest,
     background: BackgroundTasks,
 ):
-    orchestrator = get_orchestrator()
-    policy_tool = next(
-        (tool for tool in orchestrator._tool_map.values() if tool.name == "policy_lookup"),
-        None,
+    _ = request, background
+    logger.info("policy_index.rebuild.skipped", reason="agent_does_not_require_index")
+    return JSONResponse(
+        {
+            "status": "skipped",
+            "message": "Policy research agent loads taxonomy data directly and does not require indexing.",
+        }
     )
-    if not policy_tool:
-        raise HTTPException(status_code=500, detail="Policy tool not available")
-
-    def _task() -> None:
-        logger.info("policy_index.rebuild.start")
-        handler = policy_tool.handler
-        policy_instance = getattr(handler, "__self__", None)
-        if policy_instance is None:
-            raise RuntimeError("Policy tool handler is not bound to an instance")
-        result = policy_instance.ingest(refresh=request.refresh)
-        logger.info("policy_index.rebuild.finish", result=result)
-
-    background.add_task(_task)
-    return JSONResponse({"status": "queued"})
 
 
 @app.get("/healthz")

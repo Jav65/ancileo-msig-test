@@ -63,13 +63,13 @@ conversational_insurance_agent/
 - `POST /chat` - channel-agnostic message handler (web, mobile, partner apps)
 - `POST /webhooks/whatsapp` - Twilio webhook adapter (consumes `application/x-www-form-urlencoded` payloads with optional media)
 - `POST /webhooks/telegram` - Telegram bot webhook adapter
-- `POST /tools/policy/index` - asynchronous rebuild of the policy vector store
+- `POST /tools/policy/index` - retained for backwards compatibility; policy agent loads taxonomy data on demand and returns a `skipped` status
 - `GET /healthz` - service readiness check
 
 ## Tool Registry
 | Tool               | Purpose                                                              |
 |--------------------|----------------------------------------------------------------------|
-| `policy_lookup`    | Retrieve policy snippets with citations from the indexed PDFs        |
+| `policy_research`  | LangGraph agent that surfaces eligible benefits from the taxonomy    |
 | `claims_recommendation` | Generate risk-aware plan suggestions using historical claims   |
 | `document_ingest`  | Parse itineraries and bookings for traveller, date, and cost signals |
 | `payment_checkout` | Create a checkout session via Stripe or the hackathon payments stack |
@@ -91,12 +91,12 @@ Persisting the session ID ensures Redis-backed memory keeps context even when us
 
 ## Extending the Platform
 - Register new `ToolSpec` entries in `core/setup.py` for loyalty, ancillaries, or external data sources.
-- Swap the vector store implementation (Pinecone, Weaviate, Qdrant) inside `PolicyRAGTool`.
+- Extend the policy research agent with richer LangGraph workflows or additional data connectors.
 - Enhance memory by extending the Redis session store or introducing Temporal/LangGraph workflows.
 - Wrap Groq calls with Langfuse/Helicone for observability and guardrail enforcement.
 
 ## Testing Ideas
-- Unit test the tools (policy search, claims analytics, document ingestion) with fixtures from the repository.
+- Unit test the tools (policy research agent, claims analytics, document ingestion) with fixtures from the repository.
 - Add integration tests around `/chat` using mocked Groq responses to validate tool-calling logic.
 - Exercise payments end-to-end via `Payments/test_payment_flow.py` and Stripe test cards.
 
