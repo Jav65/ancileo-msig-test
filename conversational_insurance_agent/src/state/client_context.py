@@ -56,10 +56,11 @@ class PersonalInfo(BaseModel):
 
     if ConfigDict:  # pragma: no branch - static configuration
         model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-    class Config:  # pragma: no cover - compatibility shim for pydantic v1
-        allow_population_by_field_name = True
-        extra = "allow"
+    
+    else:  # pragma: no cover - compatibility shim for pydantic v1
+        class Config:
+            allow_population_by_field_name = True
+            extra = "allow"
 
 
 class TripDetails(BaseModel):
@@ -75,9 +76,10 @@ class TripDetails(BaseModel):
     if ConfigDict:  # pragma: no branch
         model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    class Config:  # pragma: no cover
-        allow_population_by_field_name = True
-        extra = "allow"
+    else:  # pragma: no cover - pydantic v1 compatibility
+        class Config:
+            allow_population_by_field_name = True
+            extra = "allow"
 
     def missing_fields(self) -> List[str]:
         missing: List[str] = []
@@ -103,9 +105,10 @@ class VerificationRecord(BaseModel):
     if ConfigDict:  # pragma: no branch
         model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    class Config:  # pragma: no cover
-        allow_population_by_field_name = True
-        extra = "allow"
+    else:  # pragma: no cover - pydantic v1 compatibility
+        class Config:
+            allow_population_by_field_name = True
+            extra = "allow"
 
 
 class ClientDatum(BaseModel):
@@ -120,9 +123,10 @@ class ClientDatum(BaseModel):
     if ConfigDict:  # pragma: no branch
         model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    class Config:  # pragma: no cover
-        allow_population_by_field_name = True
-        extra = "allow"
+    else:  # pragma: no cover - pydantic v1 compatibility
+        class Config:
+            allow_population_by_field_name = True
+            extra = "allow"
 
     def required_missing_fields(self) -> List[str]:
         missing: List[str] = []
