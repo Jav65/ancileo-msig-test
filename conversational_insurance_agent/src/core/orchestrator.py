@@ -139,13 +139,12 @@ class ConversationalOrchestrator:
                                     readiness.get("client_id"),
                                     readiness.get("fields", {}),
                                 )
-                            self._session_store.append_message(session_id, "assistant", guard_reply)
-                            return {
-                                "reply": guard_reply,
-                                "tool_used": None,
-                                "tool_result": None,
-                                "tool_runs": tool_runs,
-                            }
+                            return self._finalize_response(
+                                session_id=session_id,
+                                output=guard_reply,
+                                actions=[],
+                                tool_runs=tool_runs,
+                            )
 
                     tool_result = await tool_spec.arun(**tool_input)
                     tool_call_id = action.get("tool_call_id") or f"toolcall-{uuid4().hex}"
