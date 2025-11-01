@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     vector_db_path: Path = Field(BASE_DIR / "../data/vector_store", env="VECTOR_DB_PATH")
     claims_data_path: Path = Field(BASE_DIR / "../data/claims_stats.parquet", env="CLAIMS_DATA_PATH")
     stripe_api_key: str = Field("", env="STRIPE_API_KEY")
-    stripe_secret_key: str = Field("", env=["STRIPE_SECRET_KEY", "stripe_secret_key"])
+    stripe_secret_key: str = Field("", env="stripe_secret_key")
     stripe_webhook_secret: str = Field("", env="STRIPE_WEBHOOK_SECRET")
     payments_base_url: str = Field("http://localhost:8086", env="PAYMENTS_BASE_URL")
     payment_status_url: str = Field("http://localhost:8086/payments", env="PAYMENT_STATUS_URL")
@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     class Config:
         env_file = BASE_DIR / ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
+        case_sensitive = False
 
 
 @lru_cache()
