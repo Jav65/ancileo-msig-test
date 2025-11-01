@@ -105,7 +105,7 @@ class PaymentGateway:
             raise RuntimeError("Cannot fetch status without service endpoint or Stripe API key")
 
         session = await self._checkout_session_call("retrieve", id=session_id)
-        return {"session_id": session.id, "status": session.status, "payment_status": session.payment_status}
+        return {"id": session.id, "status": session.status, "payment_status": session.payment_status}
 
     def _configure_stripe_http_client(self) -> None:
         client = None
