@@ -118,8 +118,6 @@ class GroqMediaIngestor:
                 "groq_media.twilio_credentials_missing",
                 has_account_sid=bool(self._settings.twilio_account_sid),
                 has_auth_token=bool(self._settings.twilio_auth_token),
-                has_api_key=bool(self._settings.twilio_api_key),
-                has_api_secret=bool(self._settings.twilio_api_secret),
             )
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:

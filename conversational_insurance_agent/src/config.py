@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(..., env="GROQ_API_KEY")
     groq_model: str = Field("llama-3.1-70b-versatile", env="GROQ_MODEL")
     groq_vision_model: str = Field(
-        "llama-3.2-90b-vision-preview",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
         env="GROQ_VISION_MODEL",
     )
     redis_url: str = Field("redis://localhost:6379/0", env="REDIS_URL")
