@@ -125,6 +125,7 @@ class ConversationalOrchestrator:
                     )
 
                     if tool_name == "payment_checkout":
+                        self._session_store.apply_payment_context(session_id, tool_input)
                         readiness = self._session_store.evaluate_payment_readiness(session_id)
                         if readiness.get("status") != "ready":
                             logger.info(
