@@ -22,6 +22,18 @@ class MediaAttachment:
     media_sid: Optional[str] = None
 
 
+class MediaDownloadError(RuntimeError):
+    def __init__(self, *, status_code: int, url: str) -> None:
+        super().__init__(f"Failed to download media (status {status_code})")
+        self.status_code = status_code
+        self.url = url
+
+
+class MediaDownloadUnauthorizedError(MediaDownloadError):
+    def __init__(self, *, url: str) -> None:
+        super().__init__(status_code=401, url=url)
+
+
 class GroqMediaIngestor:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self._settings = settings or get_settings()
@@ -46,7 +58,33 @@ class GroqMediaIngestor:
         return results
 
     async def _analyse_single(self, attachment: MediaAttachment) -> str:
-        data = await self._download(attachment.url)
+        try:
+            data = await self._download(attachment.url)
+        except MediaDownloadUnauthorizedError:
+            logger.warning(
+                "groq_media.download_unauthorized",
+                media_sid=attachment.media_sid,
+                content_type=attachment.content_type,
+                url=attachment.url,
+            )
+            return (
+                "I couldn't retrieve the uploaded media because Twilio rejected the request "
+                "(HTTP 401 Unauthorized). Please check the configured Twilio credentials and "
+                "try sending the file again."
+            )
+        except MediaDownloadError as exc:
+            logger.warning(
+                "groq_media.download_failed",
+                media_sid=attachment.media_sid,
+                content_type=attachment.content_type,
+                url=attachment.url,
+                status_code=exc.status_code,
+            )
+            return (
+                "I couldn't retrieve the uploaded media right now (HTTP "
+                f"{exc.status_code}). Please try sending the file again."
+            )
+
         if attachment.content_type.startswith("image/"):
             return await self._describe_image(data, attachment.content_type)
         if attachment.content_type.lower() == "application/pdf":
@@ -68,7 +106,13 @@ class GroqMediaIngestor:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url, auth=auth)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                if status_code == 401:
+                    raise MediaDownloadUnauthorizedError(url=url) from exc
+                raise MediaDownloadError(status_code=status_code, url=url) from exc
             return response.content
 
     async def _describe_image(self, data: bytes, content_type: str) -> str:
