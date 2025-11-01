@@ -15,6 +15,10 @@ load_dotenv(BASE_DIR / ".env")
 class Settings(BaseSettings):
     groq_api_key: str = Field(..., env="GROQ_API_KEY")
     groq_model: str = Field("llama-3.1-70b-versatile", env="GROQ_MODEL")
+    groq_vision_model: str = Field(
+        "llama-3.2-90b-vision-preview",
+        env="GROQ_VISION_MODEL",
+    )
     redis_url: str = Field("redis://localhost:6379/0", env="REDIS_URL")
     vector_db_path: Path = Field(BASE_DIR / "../data/vector_store", env="VECTOR_DB_PATH")
     claims_data_path: Path = Field(BASE_DIR / "../data/claims_stats.parquet", env="CLAIMS_DATA_PATH")
@@ -25,6 +29,9 @@ class Settings(BaseSettings):
     payment_status_url: str = Field("http://localhost:8086/payments", env="PAYMENT_STATUS_URL")
     taxonomy_path: Path = Field(BASE_DIR / "../Taxonomy/Taxonomy_Hackathon.json", env="TAXONOMY_PATH")
     policy_documents_dir: Path = Field(BASE_DIR / "../Policy_Wordings", env="POLICY_DOCUMENTS_DIR")
+    twilio_account_sid: str = Field("", env="TWILIO_ACCOUNT_SID")
+    twilio_auth_token: str = Field("", env="TWILIO_AUTH_TOKEN")
+    twilio_whatsapp_number: str = Field("", env="TWILIO_WHATSAPP_NUMBER")
 
     class Config:
         env_file = BASE_DIR / ".env"

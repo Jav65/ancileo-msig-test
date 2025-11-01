@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+import html
+
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
+from .channels.whatsapp import WhatsAppMessage
 from .config import Settings, get_settings
 from .core.orchestrator import ConversationalOrchestrator
 from .core.setup import build_orchestrator
+from .services.media_ingestion import GroqMediaIngestor, MediaAttachment
 from .utils.logging import configure_logging, logger
 
 
@@ -30,12 +34,6 @@ class IngestRequest(BaseModel):
     refresh: bool = False
 
 
-class WhatsAppWebhook(BaseModel):
-    from_number: str = Field(..., alias="from")
-    body: str
-    wa_id: Optional[str] = Field(None, alias="waId")
-
-
 class TelegramWebhook(BaseModel):
     chat_id: str
     text: str
@@ -45,6 +43,7 @@ class TelegramWebhook(BaseModel):
 configure_logging()
 app = FastAPI(title="Ancileo Conversational Insurance Platform", version="0.1.0")
 _orchestrator: ConversationalOrchestrator | None = None
+_media_ingestor: GroqMediaIngestor | None = None
 
 
 def get_orchestrator() -> ConversationalOrchestrator:
@@ -56,6 +55,13 @@ def get_orchestrator() -> ConversationalOrchestrator:
 
 def get_config() -> Settings:
     return get_settings()
+
+
+def get_media_ingestor() -> GroqMediaIngestor:
+    global _media_ingestor
+    if _media_ingestor is None:
+        _media_ingestor = GroqMediaIngestor(get_settings())
+    return _media_ingestor
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -110,17 +116,70 @@ async def healthcheck(settings: Settings = Depends(get_config)) -> Dict[str, Any
     }
 
 
-@app.post("/webhooks/whatsapp")
+@app.post("/webhooks/whatsapp", response_class=Response)
 async def whatsapp_webhook(
-    payload: WhatsAppWebhook,
+    request: Request,
     orchestrator: ConversationalOrchestrator = Depends(get_orchestrator),
+    media_ingestor: GroqMediaIngestor = Depends(get_media_ingestor),
 ):
+    form_data = await request.form()
+    payload: Dict[str, str] = {key: value for key, value in form_data.items()}
+    message = WhatsAppMessage.from_twilio_payload(payload)
+
+    logger.info(
+        "whatsapp_webhook.received",
+        sender=message.sender,
+        wa_id=message.wa_id,
+        attachments=len(message.attachments),
+    )
+
+    media_attachments = [
+        MediaAttachment(
+            url=attachment.url,
+            content_type=attachment.content_type,
+            filename=attachment.filename,
+            media_sid=attachment.media_sid,
+        )
+        for attachment in message.attachments
+    ]
+
+    attachment_summaries = await media_ingestor.analyse(media_attachments)
+
+    user_message = message.text.strip()
+
+    if attachment_summaries:
+        insights = []
+        for index, summary in enumerate(attachment_summaries, start=1):
+            label = f"Attachment {index}"
+            summary_text = summary or "No insight available."
+            insights.append(f"[{label}] {summary_text}")
+
+        insights_block = "\n\n".join(insights)
+        if user_message:
+            user_message = f"{user_message}\n\n[Attachment Insights]\n{insights_block}"
+        else:
+            user_message = f"[Attachment Insights]\n{insights_block}"
+
+    if not user_message:
+        user_message = "User sent media with no accompanying text."
+
     response = await orchestrator.handle_message(
-        session_id=payload.wa_id or payload.from_number,
-        user_message=payload.body,
+        session_id=message.session_id,
+        user_message=user_message,
         channel="whatsapp",
     )
-    return {"reply": response["reply"]}
+
+    reply_text = response["reply"]
+    twiml = _render_twiml(reply_text)
+    return Response(content=twiml, media_type="application/xml")
+
+
+def _render_twiml(message: str) -> str:
+    escaped = html.escape(message or "")
+    return (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        f"<Response><Message>{escaped}</Message></Response>"
+    )
 
 
 @app.post("/webhooks/telegram")
