@@ -230,6 +230,25 @@ def _find_matching_client(
 ) -> Optional[ClientDatum]:
     candidate_keys = _client_identity_keys(candidate)
     if not candidate_keys:
+        # Attempt relaxed matching when no strong identifiers are available.
+        if len(existing_clients) == 1:
+            return existing_clients[0]
+
+        if candidate.source:
+            source_matches = [client for client in existing_clients if client.source == candidate.source]
+            if len(source_matches) == 1:
+                return source_matches[0]
+
+        candidate_name = (candidate.personal_info.name or "").strip().lower()
+        if candidate_name:
+            name_matches = [
+                client
+                for client in existing_clients
+                if (client.personal_info.name or "").strip().lower() == candidate_name
+            ]
+            if len(name_matches) == 1:
+                return name_matches[0]
+            
         return None
 
     for existing in existing_clients:

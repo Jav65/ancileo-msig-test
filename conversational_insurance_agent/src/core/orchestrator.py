@@ -140,12 +140,12 @@ class ConversationalOrchestrator:
                                     readiness.get("fields", {}),
                                 )
                             self._session_store.append_message(session_id, "assistant", guard_reply)
-                            return {
-                                "reply": guard_reply,
-                                "tool_used": None,
-                                "tool_result": None,
-                                "tool_runs": tool_runs,
-                            }
+                            return self._finalize_response(
+                                session_id=session_id,
+                                output=guard_reply,
+                                actions=[],
+                                tool_runs=tool_runs,
+                            )
 
                     tool_result = await tool_spec.arun(**tool_input)
                     tool_call_id = action.get("tool_call_id") or f"toolcall-{uuid4().hex}"
@@ -236,14 +236,21 @@ class ConversationalOrchestrator:
             missing = readiness.get("missing", [])
             if isinstance(missing, list) and missing:
                 if len(missing) == 1:
-                    fields_text = missing[0]
-                else:
-                    fields_text = ", ".join(missing[:-1]) + f" and {missing[-1]}"
-            else:
-                fields_text = "some required fields"
+                    field_label = missing[0]
+                    return (
+                        "I'm almost ready to set up payment?could you share "
+                        f"the {field_label.lower()} so I can proceed?"
+                    )
+
+                fields_text = ", ".join(missing[:-1]) + f" and {missing[-1]}"
+                return (
+                    "I still need a few details before the payment step: "
+                    f"{fields_text}. Once you share them, I can prepare checkout."
+                )
+
             return (
-                "I still need a few details before the payment step: "
-                f"{fields_text}. Once you share them, I can prepare checkout."
+                "I still need a required detail before the payment step. "
+                "Let me know once it's available so I can prepare checkout."
             )
 
         if status == "unverified":
