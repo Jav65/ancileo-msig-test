@@ -142,9 +142,6 @@ class ClientDatum(BaseModel):
             if _is_blank(getattr(self.personal_info, field_name, None)):
                 missing.append(label)
 
-        if not self.interests:
-            missing.append("Interest profile")
-
         if not self.trips:
             missing.append("Trip details")
             return missing
