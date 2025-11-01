@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Dict, Optional
 
 import httpx
 import stripe
-from stripe.http_client import AsyncioClient
 
 from ..config import get_settings
 from ..utils.logging import logger
@@ -15,7 +15,7 @@ class PaymentGateway:
         self._settings = get_settings()
         if self._settings.stripe_api_key:
             stripe.api_key = self._settings.stripe_api_key
-            stripe.default_http_client = AsyncioClient()
+            self._configure_stripe_http_client()
 
     async def create_checkout_session(
         self,
@@ -71,7 +71,8 @@ class PaymentGateway:
             }
         ]
 
-        session = await stripe.checkout.Session.create(
+        session = await self._checkout_session_call(
+            "create",
             payment_method_types=["card"],
             line_items=line_items,
             mode="payment",
@@ -103,5 +104,70 @@ class PaymentGateway:
         if not self._settings.stripe_api_key:
             raise RuntimeError("Cannot fetch status without service endpoint or Stripe API key")
 
-        session = await stripe.checkout.Session.retrieve(session_id)
+        session = await self._checkout_session_call("retrieve", session_id=session_id)
         return {"session_id": session.id, "status": session.status, "payment_status": session.payment_status}
+
+    def _configure_stripe_http_client(self) -> None:
+        client = None
+
+        try:
+            from stripe.http_client import AsyncioClient  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - compatibility shim
+            pass
+        else:
+            try:
+                client = AsyncioClient()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("payments.configure_async_client_failed", error=str(exc))
+                client = None
+
+        if client is None:
+            new_default_http_client = getattr(stripe, "new_default_http_client", None)
+            try:
+                from stripe import _http_client as stripe_http_client  # type: ignore[attr-defined]
+            except Exception:  # pragma: no cover - module absent in older sdks
+                stripe_http_client = None
+
+            fallback_factory = (
+                getattr(stripe_http_client, "new_http_client_async_fallback", None)
+                if stripe_http_client is not None
+                else None
+            )
+
+            if callable(new_default_http_client) and callable(fallback_factory):
+                try:
+                    signature = inspect.signature(new_default_http_client)
+                except (TypeError, ValueError):
+                    supports_async_kw = False
+                else:
+                    supports_async_kw = "async_fallback_client" in signature.parameters
+                if supports_async_kw:
+                    try:
+                        client = new_default_http_client(
+                            async_fallback_client=fallback_factory()
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.warning("payments.configure_httpx_client_failed", error=str(exc))
+                        client = None
+
+        if client is not None:
+            stripe.default_http_client = client
+        else:
+            logger.warning("payments.async_http_client_unconfigured")
+
+    async def _checkout_session_call(self, method_name: str, **kwargs: Any) -> Any:
+        session_cls = stripe.checkout.Session
+        async_method_name = f"{method_name}_async"
+
+        if hasattr(session_cls, async_method_name):
+            method = getattr(session_cls, async_method_name)
+            result = method(**kwargs)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+
+        method = getattr(session_cls, method_name)
+        result = method(**kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
