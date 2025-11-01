@@ -15,9 +15,11 @@ from .tooling import ToolSpec
 
 TOOL_INSTRUCTION = (
     "You have access to specialized tools.\n"
-    "If a tool is required, respond ONLY and ONLY with a JSON object that matches:\n"
-    '{"action": "tool_name", "input": { ... }}\n'
-    "Always cite sources from policy documents when answering directly."
+    "If tools are required, respond ONLY with a JSON object that matches:\n"
+    '{"actions": [{"tool": "tool_name", "input": { ... }}]}\n'
+    "List every required tool in execution order within the array.\n"
+    "After receiving tool results, use a concise_and_recommend reasoning step before replying,"
+    " and always cite sources from policy documents when answering directly."
 )
 
 
@@ -56,45 +58,119 @@ class ConversationalOrchestrator:
 
         logger.info("orchestrator.invoke", channel=channel, session_id=session_id)
 
-        reply = await self._generate_response(messages)
-        parsed = self._try_parse_json(reply)
-
         self._session_store.append_message(session_id, "user", user_message)
 
-        if parsed and parsed.get("action") in self._tool_map:
-            tool_name = parsed["action"]
-            tool_input = parsed.get("input", {})
-            tool_spec = self._tool_map[tool_name]
-            logger.info(
-                "orchestrator.tool_call",
-                session_id=session_id,
-                tool=tool_name,
-                payload=tool_input,
-            )
-            tool_result = await tool_spec.arun(**tool_input)
-            tool_call_id = parsed.get("tool_call_id") or f"toolcall-{uuid4().hex}"
-            tool_message = {
-                "role": "tool",
-                "name": tool_name,
-                "content": json.dumps(tool_result, ensure_ascii=False),
-                "tool_call_id": tool_call_id,
-            }
+        tool_runs: List[Dict[str, Any]] = []
+        max_rounds = 6
+        turn = 0
 
-            # store tool result for future reference
-            self._session_store.set_tool_result(session_id, tool_name, tool_result)
-            messages.append({"role": "assistant", "content": reply})
-            messages.append(tool_message)
+        while turn < max_rounds:
+            turn += 1
+            reply = await self._generate_response(messages)
+            parsed = self._try_parse_json(reply)
+            actions = self._extract_actions(parsed)
 
-            second_reply = await self._generate_response(messages)
-            self._session_store.append_message(session_id, "assistant", second_reply)
+            if actions:
+                messages.append({"role": "assistant", "content": reply})
+
+                for index, action in enumerate(actions, start=1):
+                    tool_name = action.get("tool")
+                    if not tool_name:
+                        logger.warning(
+                            "orchestrator.tool_missing_name",
+                            session_id=session_id,
+                            action=action,
+                        )
+                        continue
+
+                    tool_spec = self._tool_map.get(tool_name)
+                    if not tool_spec:
+                        logger.error(
+                            "orchestrator.unknown_tool",
+                            session_id=session_id,
+                            tool=tool_name,
+                        )
+                        failure_reply = (
+                            "I'm sorry, I can't access the requested capability right now. "
+                            "Could you try rephrasing your question?"
+                        )
+                        self._session_store.append_message(session_id, "assistant", failure_reply)
+                        return {
+                            "reply": failure_reply,
+                            "tool_used": None,
+                            "tool_result": None,
+                            "tool_runs": tool_runs,
+                        }
+
+                    tool_input = action.get("input", {})
+                    logger.info(
+                        "orchestrator.tool_call",
+                        session_id=session_id,
+                        tool=tool_name,
+                        payload=tool_input,
+                        sequence=index,
+                        total=len(actions),
+                    )
+
+                    tool_result = await tool_spec.arun(**tool_input)
+                    tool_call_id = action.get("tool_call_id") or f"toolcall-{uuid4().hex}"
+                    tool_message = {
+                        "role": "tool",
+                        "name": tool_name,
+                        "content": json.dumps(tool_result, ensure_ascii=False),
+                        "tool_call_id": tool_call_id,
+                    }
+
+                    self._session_store.set_tool_result(session_id, tool_name, tool_result)
+                    messages.append(tool_message)
+                    tool_runs.append(
+                        {
+                            "name": tool_name,
+                            "input": tool_input,
+                            "result": tool_result,
+                            "tool_call_id": tool_call_id,
+                        }
+                    )
+
+                # loop to let the assistant incorporate tool outputs
+                continue
+
+            if parsed is not None and "actions" in parsed and not actions:
+                logger.info(
+                    "orchestrator.no_tool_actions",
+                    session_id=session_id,
+                    turn=turn,
+                )
+                messages.append({"role": "assistant", "content": reply})
+                continue
+
+            # no actions detected; treat reply as the final assistant message
+            self._session_store.append_message(session_id, "assistant", reply)
+            last_tool = tool_runs[-1]["name"] if tool_runs else None
+            last_result = tool_runs[-1]["result"] if tool_runs else None
             return {
-                "reply": second_reply,
-                "tool_used": tool_name,
-                "tool_result": tool_result,
+                "reply": reply,
+                "tool_used": last_tool,
+                "tool_result": last_result,
+                "tool_runs": tool_runs,
             }
 
-        self._session_store.append_message(session_id, "assistant", reply)
-        return {"reply": reply, "tool_used": None}
+        logger.error(
+            "orchestrator.max_rounds_exceeded",
+            session_id=session_id,
+            max_rounds=max_rounds,
+        )
+        failure_reply = (
+            "I'm sorry, I'm having trouble completing that request right now. "
+            "Let's try again in a moment."
+        )
+        self._session_store.append_message(session_id, "assistant", failure_reply)
+        return {
+            "reply": failure_reply,
+            "tool_used": None,
+            "tool_result": None,
+            "tool_runs": tool_runs,
+        }
 
     async def _generate_response(self, messages: List[Dict[str, str]]) -> str:
         response = await asyncio.to_thread(
@@ -115,3 +191,22 @@ class ConversationalOrchestrator:
             return json.loads(payload)
         except json.JSONDecodeError:
             return None
+
+    @staticmethod
+    def _extract_actions(payload: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not payload:
+            return []
+
+        if "actions" in payload and isinstance(payload["actions"], list):
+            return [action for action in payload["actions"] if isinstance(action, dict)]
+
+        if payload.get("action"):
+            return [
+                {
+                    "tool": payload.get("action"),
+                    "input": payload.get("input", {}),
+                    "tool_call_id": payload.get("tool_call_id"),
+                }
+            ]
+
+        return []
