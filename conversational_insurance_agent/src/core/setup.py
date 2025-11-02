@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..agents import PolicyResearchAgent
@@ -55,13 +56,7 @@ def build_orchestrator() -> ConversationalOrchestrator:
                 },
                 "required": ["user_query", "recommended_products", "tiers"],
             },
-            handler=lambda user_query, recommended_products, tiers, chat_history=None: _run_policy_agent(
-                policy_agent,
-                user_query=user_query,
-                recommended_products=recommended_products,
-                tiers=tiers,
-                chat_history=chat_history,
-            ),
+            handler=partial(_policy_research_tool_handler, policy_agent),
         ),
         ToolSpec(
             name="claims_recommendation",
@@ -338,6 +333,38 @@ def build_orchestrator() -> ConversationalOrchestrator:
     ]
 
     return ConversationalOrchestrator(tools)
+
+
+def _policy_research_tool_handler(
+    agent: PolicyResearchAgent,
+    *,
+    user_query: str,
+    recommended_products: Sequence[str] | str | None = None,
+    tiers: Sequence[str] | str | None = None,
+    chat_history: Optional[Sequence[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    missing_fields: List[str] = []
+    if recommended_products is None:
+        missing_fields.append("recommended_products")
+        recommended_products = []
+    if tiers is None:
+        missing_fields.append("tiers")
+        tiers = []
+
+    if missing_fields:
+        logger.warning(
+            "policy_research_agent.missing_tool_arguments",
+            missing=missing_fields,
+            user_query_preview=(user_query or "")[:80],
+        )
+
+    return _run_policy_agent(
+        agent,
+        user_query=user_query,
+        recommended_products=recommended_products,
+        tiers=tiers,
+        chat_history=chat_history,
+    )
 
 
 def _run_policy_agent(
