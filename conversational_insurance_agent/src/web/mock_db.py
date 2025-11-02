@@ -37,7 +37,7 @@ def _load_users() -> Dict[str, MockUserRecord]:
                     "email_address": "alice@example.com",
                     "phone_number": "+65 8123 4455",
                     "date_of_birth": "1990-06-15",
-                    "place_of_residence": "Singapore",
+                    "place_of_residence": "Malaysia",
                     "passport_number": "E1234567K",
                 },
                 "trips": [
@@ -86,12 +86,12 @@ def _load_users() -> Dict[str, MockUserRecord]:
                 "personal_info": {
                     "name": "Casey Lin",
                     "email_address": "casey@example.com",
-                    "place_of_residence": "Singapore",
+                    "place_of_residence": "France",
                 },
                 "trips": [
                     {
-                        "trip_id": "casey-europe-2025",
-                        "destination": "Western Europe",
+                        "trip_id": "casey-france-2025",
+                        "destination": "France",
                         "start_date": "2025-04-03",
                         "trip_type": "single",
                         "metadata": {
@@ -125,7 +125,7 @@ def _load_users() -> Dict[str, MockUserRecord]:
                     "email_address": "ben@travelco.sg",
                     "phone_number": "+65 8899 2211",
                     "passport_number": "S9988776P",
-                    "place_of_residence": "Singapore",
+                    "place_of_residence": "Hong Kong",
                 },
                 "trips": [],
                 "interests": ["golf", "luxury hotels"],
