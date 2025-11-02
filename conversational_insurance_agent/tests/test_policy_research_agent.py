@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -92,3 +93,71 @@ def test_policy_research_agent_handles_missing_products(taxonomy_path: Path) -> 
 
     assert result.products == []
     assert not dummy_llm.invocations, "LLM should not be called when no products are provided"
+
+
+def test_policy_research_agent_reload_taxonomy_when_file_changes(tmp_path: Path) -> None:
+    taxonomy_path = tmp_path / "taxonomy.json"
+    initial_payload = {
+        "layers": {
+            "layer_1_general_conditions": [],
+            "layer_2_benefits": [],
+            "layer_3_benefit_conditions": [],
+        }
+    }
+    taxonomy_path.write_text(json.dumps(initial_payload), encoding="utf-8")
+
+    dummy_llm = DummyLLM(json.dumps({"products": [], "reasoning": ""}))
+    agent = PolicyResearchAgent(
+        settings=Settings(
+            groq_api_key="test-key",
+            groq_model="test-model",
+            taxonomy_path=taxonomy_path,
+        ),
+        llm=dummy_llm,
+    )
+
+    agent.run(
+        user_query="Initial run",
+        recommended_products=["Plan"],
+        tiers=["Standard"],
+        chat_history=[],
+    )
+
+    dummy_llm.invocations.clear()
+
+    updated_payload = {
+        "layers": {
+            "layer_1_general_conditions": [],
+            "layer_2_benefits": [
+                {
+                    "benefit_name": "new_benefit",
+                    "parameters": [],
+                    "products": {
+                        "Plan": {
+                            "condition_exist": True,
+                            "parameters": {
+                                "coverage_limit": "$500",
+                                "sub_limits": {},
+                            },
+                        }
+                    },
+                }
+            ],
+            "layer_3_benefit_conditions": [],
+        }
+    }
+    taxonomy_path.write_text(json.dumps(updated_payload), encoding="utf-8")
+    new_timestamp = taxonomy_path.stat().st_mtime + 5
+    os.utime(taxonomy_path, (new_timestamp, new_timestamp))
+
+    agent.run(
+        user_query="Need updated context",
+        recommended_products=["Plan"],
+        tiers=["Standard"],
+        chat_history=[],
+    )
+
+    assert dummy_llm.invocations, "LLM should have been invoked after taxonomy update"
+    llm_prompt = dummy_llm.invocations[0]["messages"][1].content
+    assert "new_benefit" in llm_prompt
+    assert "$500" in llm_prompt

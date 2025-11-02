@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
+from pathlib import Path
 from typing import Dict, List
 
 import pytest
@@ -76,7 +78,20 @@ def groq_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture()
-def client() -> TestClient:
+def taxonomy_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    output_path = tmp_path / "generated_taxonomy.json"
+    monkeypatch.setenv("TAXONOMY_PATH", str(output_path))
+
+    from src import config
+
+    config.get_settings.cache_clear()
+    yield output_path
+    config.get_settings.cache_clear()
+    monkeypatch.delenv("TAXONOMY_PATH", raising=False)
+
+
+@pytest.fixture()
+def client(taxonomy_tmp_path: Path) -> TestClient:
     with TestClient(app) as test_client:
         yield test_client
 
@@ -98,7 +113,12 @@ def sample_pdf() -> bytes:
     return buffer.getvalue()
 
 
-def test_extract_taxonomy_success(client: TestClient, stub_ingestor: StubPolicyIngestor, sample_pdf: bytes) -> None:
+def test_extract_taxonomy_success(
+    client: TestClient,
+    stub_ingestor: StubPolicyIngestor,
+    sample_pdf: bytes,
+    taxonomy_tmp_path: Path,
+) -> None:
     response = client.post(
         "/taxonomy/extract",
         data={"product_label": "demo_plan"},
@@ -153,6 +173,10 @@ def test_extract_taxonomy_success(client: TestClient, stub_ingestor: StubPolicyI
         ],
     }
     assert {call["layer"] for call in stub_ingestor.calls} == {"layer1", "layer2", "layer3"}
+
+    saved_payload = json.loads(taxonomy_tmp_path.read_text(encoding="utf-8"))
+    assert saved_payload["product_label"] == "demo_plan"
+    assert saved_payload["layers"] == body
 
 
 def test_extract_taxonomy_rejects_non_pdf(client: TestClient, stub_ingestor: StubPolicyIngestor) -> None:

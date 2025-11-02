@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import html
+import json
 import os
+from datetime import datetime
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
 
@@ -123,6 +125,52 @@ def get_policy_ingestor(settings: Settings = Depends(get_config)) -> PolicyInges
     return _policy_ingestor
 
 
+def _persist_taxonomy_payload(
+    *,
+    product_label: str,
+    layers: Dict[str, Any],
+    settings: Settings,
+) -> str:
+    output_path = settings.taxonomy_path
+    output_dir = output_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "product_label": product_label,
+        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "layers": layers,
+    }
+
+    temp_path: str | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            prefix="tmp_taxonomy_",
+            dir=str(output_dir),
+            encoding="utf-8",
+            delete=False,
+        ) as temp_file:
+            json.dump(payload, temp_file, indent=2, ensure_ascii=False)
+            temp_path = temp_file.name
+
+        os.replace(temp_path, output_path)
+        logger.info(
+            "policy_taxonomy.persisted",
+            path=str(output_path),
+            product_label=product_label,
+        )
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                logger.warning("policy_taxonomy.persist_cleanup_failed", path=temp_path)
+        raise
+
+    return str(output_path)
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
     payload: ChatRequest,
@@ -176,6 +224,7 @@ async def extract_taxonomy_endpoint(
     product_label: str = Form(..., description="Identifier used for the product taxonomy"),
     pdf: UploadFile = File(..., description="Travel insurance policy PDF"),
     ingestor: PolicyIngestor = Depends(get_policy_ingestor),
+    settings: Settings = Depends(get_config),
 ):
     if not product_label.strip():
         raise HTTPException(status_code=400, detail="product_label cannot be empty")
@@ -200,6 +249,13 @@ async def extract_taxonomy_endpoint(
             temp_path,
             product_label.strip(),
             ingestor,
+        )
+
+        await run_in_threadpool(
+            _persist_taxonomy_payload,
+            product_label=product_label.strip(),
+            layers=result,
+            settings=settings,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

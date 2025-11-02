@@ -46,7 +46,10 @@ class PolicyResearchAgent:
         llm: Optional[ChatGroq] = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self._taxonomy_payload = self._load_taxonomy(self._settings.taxonomy_path)
+        self._taxonomy_path = self._settings.taxonomy_path
+        self._taxonomy_payload: Dict[str, Any] = {}
+        self._taxonomy_mtime: float | None = None
+        self._load_taxonomy_payload()
         self._llm = llm or ChatGroq(
             model=self._settings.groq_model,
             temperature=0.2,
@@ -63,6 +66,8 @@ class PolicyResearchAgent:
         chat_history: Optional[Sequence[Tuple[str, str]]] = None,
     ) -> PolicyResearchResult:
         """Execute the agent and return the researched benefits."""
+
+        self._ensure_taxonomy_fresh()
 
         initial_state: AgentState = {
             "user_query": user_query,
@@ -200,7 +205,11 @@ class PolicyResearchAgent:
         layers = self._taxonomy_payload.get("layers", {}) if isinstance(self._taxonomy_payload, dict) else {}
         general_conditions = layers.get("layer_1_general_conditions", []) if isinstance(layers, dict) else []
         benefits = layers.get("layer_2_benefits", []) if isinstance(layers, dict) else []
-        benefit_conditions = layers.get("layer_3_benefit_specific_conditions", []) if isinstance(layers, dict) else []
+        benefit_conditions: Any = []
+        if isinstance(layers, dict):
+            benefit_conditions = layers.get("layer_3_benefit_specific_conditions")
+            if not benefit_conditions:
+                benefit_conditions = layers.get("layer_3_benefit_conditions", [])
 
         product_sections: List[str] = []
         for index, product in enumerate(products):
@@ -313,4 +322,23 @@ class PolicyResearchAgent:
         if not isinstance(payload, dict):
             raise ValueError("Taxonomy payload should be a JSON object")
         return payload
+
+    def _load_taxonomy_payload(self) -> None:
+        payload = self._load_taxonomy(self._taxonomy_path)
+        self._taxonomy_payload = payload
+        try:
+            self._taxonomy_mtime = self._taxonomy_path.stat().st_mtime
+        except OSError:
+            self._taxonomy_mtime = None
+
+    def _ensure_taxonomy_fresh(self) -> None:
+        try:
+            current_mtime = self._taxonomy_path.stat().st_mtime
+        except FileNotFoundError as exc:
+            logger.error("policy_research_agent.taxonomy_missing", path=str(self._taxonomy_path))
+            raise
+
+        if self._taxonomy_mtime is None or current_mtime > self._taxonomy_mtime:
+            logger.info("policy_research_agent.taxonomy_reload", path=str(self._taxonomy_path))
+            self._load_taxonomy_payload()
 
