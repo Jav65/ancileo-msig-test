@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gmail Travel Assistant</title>
+    <link rel="stylesheet" href="/gmail/static/styles.css" />
+    <script defer src="/gmail/static/chat.js"></script>
+  </head>
+  <body class="page page--chat">
+    {% set profile_name = profile.get('name') if profile else None %}
+    {% set profile_email = profile.get('email') if profile else None %}
+    <header class="top-bar">
+      <div class="top-bar__identity">
+        <div class="avatar">{{ profile_name[:1] if profile_name else "@" }}</div>
+        <div class="identity">
+          <strong>{{ profile_name or client.personal_info.name or "Traveller" }}</strong>
+          <small>{{ profile_email or client.personal_info.email_address }}</small>
+        </div>
+      </div>
+      <nav class="top-bar__actions">
+        <a class="link" href="/gmail/logout">Sign out</a>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <aside class="context">
+        <section class="panel">
+          <h2>Upcoming Trips</h2>
+          {% if trips %}
+          <ul class="trip-list">
+            {% for trip in trips %}
+            <li class="trip">
+              <h3>{{ trip.destination or "Unknown destination" }}</h3>
+              <p>
+                <strong>Dates:</strong>
+                {% if trip.start_date %}{{ trip.start_date }}{% else %}?{% endif %}
+                {% if trip.end_date %}&rarr; {{ trip.end_date }}{% endif %}
+              </p>
+              {% if trip.trip_type %}<p><strong>Type:</strong> {{ trip.trip_type|capitalize }}</p>{% endif %}
+              {% if trip.trip_cost %}<p><strong>Estimated spend:</strong> {{ trip.trip_cost }}</p>{% endif %}
+              {% if trip.metadata.get('messageUrl') %}
+              <p><a href="{{ trip.metadata.get('messageUrl') }}" target="_blank" rel="noopener">View email</a></p>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="empty-state">We could not find recent itineraries. Ask the assistant to upload a ticket or provide details.</p>
+          {% endif %}
+        </section>
+
+        {% set missing = client.verification.fields.get('missing') if client and client.verification else [] %}
+        {% if missing %}
+        <section class="panel panel--warning">
+          <h2>Missing details</h2>
+          <ul>
+            {% for field in missing %}<li>{{ field }}</li>{% endfor %}
+          </ul>
+        </section>
+        {% endif %}
+      </aside>
+
+      <section class="chat">
+        <div class="chat__header">
+          <h1>Aurora &mdash; Your Travel Insurance Companion</h1>
+          <p class="subtitle">
+            Context is sourced live from your Gmail inbox. We never store your emails; you can disconnect anytime.
+          </p>
+        </div>
+
+        <div id="message-feed" class="chat__feed" aria-live="polite"></div>
+
+        <form id="chat-form" class="chat__form" method="post" action="/gmail/chat/send">
+          <label class="sr-only" for="message">Say something</label>
+          <input
+            id="message"
+            name="message"
+            type="text"
+            placeholder="Ask about coverage, claims or trip protection..."
+            autocomplete="off"
+            required
+          />
+          <button type="submit" class="button button--primary">Send</button>
+        </form>
+        <div id="status" class="chat__status" role="status">Loading</div>
+      </section>
+    </main>
+  </body>
+</html>
