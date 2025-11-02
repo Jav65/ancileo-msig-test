@@ -219,6 +219,12 @@ class ConversationalOrchestrator:
     ) -> Dict[str, Any]:
         normalized_actions = list(actions or [])
         output_text = output if isinstance(output, str) else str(output)
+
+        if not output_text.strip():
+            fallback_reply = self._compose_tool_fallback_reply(tool_runs)
+            if fallback_reply:
+                output_text = fallback_reply
+
         payload = {"output": output_text, "actions": normalized_actions}
         self._session_store.append_message(
             session_id,
@@ -236,6 +242,88 @@ class ConversationalOrchestrator:
             "tool_result": last_result,
             "tool_runs": tool_runs,
         }
+
+    @staticmethod
+    def _compose_tool_fallback_reply(tool_runs: List[Dict[str, Any]]) -> str:
+        if not tool_runs:
+            return ""
+
+        last_run = tool_runs[-1]
+        tool_name = last_run.get("name")
+        result = last_run.get("result")
+
+        if tool_name == "policy_research":
+            return ConversationalOrchestrator._compose_policy_research_summary(result)
+
+        return ""
+
+    @staticmethod
+    def _compose_policy_research_summary(result: Any) -> str:
+        if not isinstance(result, dict):
+            return ""
+
+        products = result.get("products")
+        reasoning = result.get("reasoning")
+
+        lines: List[str] = []
+
+        if isinstance(products, list) and products:
+            lines.append("Here is what I can confirm from the policy taxonomy:")
+            for product_entry in products:
+                if not isinstance(product_entry, dict):
+                    continue
+
+                product_name = str(product_entry.get("product") or "Unnamed product").strip()
+                tier = str(product_entry.get("tier") or "").strip()
+                header = f"{product_name} ({tier})" if tier else product_name
+                lines.append(f"- {header}")
+
+                benefits = product_entry.get("benefits")
+                if not isinstance(benefits, list):
+                    continue
+
+                for benefit in benefits:
+                    if not isinstance(benefit, dict):
+                        continue
+
+                    benefit_name = str(benefit.get("name") or "Benefit").strip()
+                    why = str(benefit.get("why_eligible") or "").strip()
+
+                    detail_fragments: List[str] = []
+                    parameters = benefit.get("parameters")
+                    if isinstance(parameters, dict):
+                        coverage_limit = parameters.get("coverage_limit") or parameters.get("limit")
+                        if coverage_limit:
+                            detail_fragments.append(f"limit {coverage_limit}")
+                    conditions = benefit.get("conditions")
+                    if isinstance(conditions, list):
+                        rendered_conditions = [
+                            str(item).strip() for item in conditions if str(item).strip()
+                        ]
+                        if rendered_conditions:
+                            detail_fragments.append("conditions: " + "; ".join(rendered_conditions))
+
+                    detail_suffix = ""
+                    if detail_fragments:
+                        detail_suffix = f" ({'; '.join(detail_fragments)})"
+
+                    if why:
+                        lines.append(f"  - {benefit_name}: {why}{detail_suffix}")
+                    else:
+                        lines.append(f"  - {benefit_name}{detail_suffix}")
+
+        if isinstance(reasoning, str) and reasoning.strip():
+            if lines:
+                lines.append("")
+            lines.append(reasoning.strip())
+
+        if not lines:
+            return ""
+
+        lines.append("")
+        lines.append("Source: policy taxonomy dataset.")
+
+        return "\n".join(lines).strip()
 
     @staticmethod
     def _compose_payment_guard_reply(readiness: Dict[str, Any]) -> str:

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.agents.policy_researcher import PolicyResearchAgent
+from src.core.orchestrator import ConversationalOrchestrator
 from src.config import Settings
 
 
@@ -166,3 +167,41 @@ def test_policy_research_agent_reload_taxonomy_when_file_changes(tmp_path: Path)
     llm_prompt = dummy_llm.invocations[0]["messages"][1].content
     assert "new_benefit" in llm_prompt
     assert "$500" in llm_prompt
+
+
+def test_policy_research_fallback_summary_formats_benefits() -> None:
+    result = {
+        "products": [
+            {
+                "product": "Scootsurance",
+                "tier": "Premium",
+                "benefits": [
+                    {
+                        "name": "Emergency medical evacuation",
+                        "why_eligible": "Benefit listed for this tier",
+                        "parameters": {"coverage_limit": "Unlimited"},
+                        "conditions": ["Journey must be overseas"],
+                    }
+                ],
+            }
+        ],
+        "reasoning": "Focus on emergency evacuation coverage as requested.",
+    }
+
+    summary = ConversationalOrchestrator._compose_policy_research_summary(result)
+
+    assert "Scootsurance (Premium)" in summary
+    assert "Emergency medical evacuation" in summary
+    assert "Unlimited" in summary
+    assert "Source: policy taxonomy dataset." in summary
+
+
+def test_policy_research_fallback_summary_uses_reasoning_only() -> None:
+    result = {
+        "products": [],
+        "reasoning": "No eligible benefits were found for the current request.",
+    }
+
+    summary = ConversationalOrchestrator._compose_policy_research_summary(result)
+
+    assert "No eligible benefits" in summary
