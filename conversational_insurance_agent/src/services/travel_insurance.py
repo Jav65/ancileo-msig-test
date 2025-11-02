@@ -28,9 +28,14 @@ class AncileoTravelAPI:
         self._timeout = 15.0
 
     async def quote(self, **payload: Any) -> Dict[str, Any]:
-        """Call the Ancileo quotation endpoint and return the JSON payload."""
+        """Call the Ancileo quotation endpoint and return the JSON payload.
 
-        request = self._prepare_quote_payload(payload)
+        The integration currently requires a fixed payload provided by the
+        stakeholder, so any payload supplied by the caller is ignored in favour
+        of that hard-coded request.
+        """
+
+        request = self._hardcoded_quote_payload()
         data = await self._post("/pricing", request)
 
         quote_id = data.get("quoteId") if isinstance(data, dict) else None
@@ -39,6 +44,26 @@ class AncileoTravelAPI:
         logger.info("ancileo.quote.success", quote_id=quote_id, offers=offers_count)
 
         return data
+
+    @staticmethod
+    def _hardcoded_quote_payload() -> Dict[str, Any]:
+        """Return the fixed quotation payload expected by the Ancileo sandbox."""
+
+        return {
+            "market": "SG",
+            "languageCode": "en",
+            "channel": "white-label",
+            "deviceType": "DESKTOP",
+            "context": {
+                "tripType": "ST",
+                "departureDate": "2025-11-04",
+                "returnDate": "2025-11-15",
+                "departureCountry": "SG",
+                "arrivalCountry": "CN",
+                "adultsCount": 1,
+                "childrenCount": 0,
+            },
+        }
 
     async def purchase(self, **payload: Any) -> Dict[str, Any]:
         """Call the Ancileo purchase endpoint after successful payment."""
