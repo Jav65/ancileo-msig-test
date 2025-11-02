@@ -41,6 +41,7 @@ def test_compose_profile_guidance_identifies_rich_profile() -> None:
     assert "Alice Tan" in summary
     assert "\"missing_fields\": []" in summary
     assert "claims_recommendation" in summary
+    assert "travel_risk_prediction" in summary
 
 
 def test_compose_profile_guidance_identifies_partial_profile() -> None:
