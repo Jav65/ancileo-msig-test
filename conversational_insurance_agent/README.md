@@ -9,6 +9,7 @@ Aurora is a multi-channel conversational concierge that turns travel insurance i
 - **Document intelligence** - Booking PDFs can be parsed to extract travellers, destinations, schedules, and spend signals.
 - **Seamless commerce** - Stripe payments or the supplied Docker stack create and monitor checkout sessions inside the chat.
 - **Channel adapters** - Web, WhatsApp, and Telegram endpoints reuse the same orchestration core, keeping journeys consistent.
+- **Partner portal ready** - A demo website lets distribution partners log in, review traveller history, and launch Aurora with pre-filled context.
 
 ## Project Layout
 ```
@@ -41,6 +42,7 @@ conversational_insurance_agent/
    - `STRIPE_API_KEY` and `STRIPE_WEBHOOK_SECRET` (leave blank to rely on the provided payments microservice)
    - `REDIS_URL`, `VECTOR_DB_PATH`, `CLAIMS_DATA_PATH` as needed
    - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` for WhatsApp (or `TWILIO_API_KEY`/`TWILIO_API_SECRET` if you prefer API keys)
+   - `SESSION_SECRET` to secure the partner portal cookies (defaults to a development fallback)
 
 3. **Prepare Redis**
    ```bash
@@ -65,6 +67,16 @@ conversational_insurance_agent/
 - `POST /webhooks/telegram` - Telegram bot webhook adapter
 - `POST /tools/policy/index` - retained for backwards compatibility; policy agent loads taxonomy data on demand and returns a `skipped` status
 - `GET /healthz` - service readiness check
+- `GET /integration/login` - partner portal sign-in screen (demo credentials provided)
+- `POST /integration/chat/send` - lightweight bridge that injects traveller data from the partner portal into the orchestrator before chatting
+
+## Partner Integration Portal
+1. Start the FastAPI server as usual (`uvicorn src.main:app --reload --port 8080`).
+2. Visit `http://localhost:8080/integration/login` and sign in with one of the demo accounts shown on the login page (e.g. `alice@example.com / travel123`).
+3. Review the traveller profile, upcoming trip, and historical policy purchases surfaced from the mock database.
+4. Chat with Aurora inside the web console?each message automatically merges the known traveller data into the orchestrator so the assistant can confirm details, run claims intelligence, and recommend the right plan immediately.
+
+The portal exercises the "seamless integration" workflow: when a traveller profile is complete, Aurora confirms it and jumps straight into tool calls; when data is sparse, the orchestrator instructs the model to gather missing fields before recommending coverage and to re-verify information prior to payment.
 
 ## Tool Registry
 | Tool               | Purpose                                                              |

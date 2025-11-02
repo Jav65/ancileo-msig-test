@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partner Chat Console</title>
+    <link rel="stylesheet" href="/integration/static/styles.css">
+</head>
+<body class="portal-bg">
+    <header class="top-bar">
+        <div class="brand">
+            <span class="logo">??</span>
+            <span>
+                <strong>Ancileo Partner Console</strong>
+                <small>Logged in as {{ user.display_name }}</small>
+            </span>
+        </div>
+        <nav>
+            <a class="button ghost" href="/integration/logout">Logout</a>
+        </nav>
+    </header>
+
+    <main class="layout">
+        <aside class="sidebar">
+            <section class="card">
+                <h2>Traveller Profile</h2>
+                <dl class="profile-grid">
+                    <dt>Name</dt>
+                    <dd>{{ client.personal_info.name or "Unknown" }}</dd>
+
+                    <dt>Email</dt>
+                    <dd>{{ client.personal_info.email_address or "Unknown" }}</dd>
+
+                    <dt>Phone</dt>
+                    <dd>{{ client.personal_info.phone_number or "Missing" }}</dd>
+
+                    <dt>Residence</dt>
+                    <dd>{{ client.personal_info.place_of_residence or "Missing" }}</dd>
+
+                    <dt>Passport</dt>
+                    <dd>{{ client.personal_info.passport_number or "Missing" }}</dd>
+                </dl>
+            </section>
+
+            <section class="card">
+                <h2>Upcoming Trip</h2>
+                {% if primary_trip %}
+                <dl class="profile-grid">
+                    <dt>Destination</dt>
+                    <dd>{{ primary_trip.destination or "Unknown" }}</dd>
+                    <dt>Start Date</dt>
+                    <dd>{{ primary_trip.start_date or "Unknown" }}</dd>
+                    <dt>End Date</dt>
+                    <dd>{{ primary_trip.end_date or "Unknown" }}</dd>
+                    <dt>Trip Type</dt>
+                    <dd>{{ primary_trip.trip_type or "Unknown" }}</dd>
+                    <dt>Trip Cost</dt>
+                    <dd>
+                        {% if primary_trip.trip_cost %}
+                            {{ "{:,}".format(primary_trip.trip_cost) }}
+                        {% else %}
+                            Missing
+                        {% endif %}
+                    </dd>
+                </dl>
+                {% else %}
+                <p class="muted">No trip on file. Aurora will ask for details before recommending a plan.</p>
+                {% endif %}
+            </section>
+
+            <section class="card">
+                <h2>Policy History</h2>
+                <ul class="policy-list">
+                    {% for policy in past_policies %}
+                    <li>
+                        <strong>{{ policy.policy }}</strong>
+                        <span class="muted">Purchased {{ policy.purchase_date }}</span>
+                        <span>{{ policy.coverage }}</span>
+                        <small>Claims: {{ policy.claims }}</small>
+                    </li>
+                    {% else %}
+                    <li class="muted">No historical policies recorded.</li>
+                    {% endfor %}
+                </ul>
+            </section>
+        </aside>
+
+        <section class="chat-panel card" data-session="{{ user.session_id }}">
+            <div id="message-feed" class="message-feed" aria-live="polite">
+                <div class="message assistant">
+                    <div class="meta">Aurora</div>
+                    <div class="bubble">Hi {{ client.personal_info.name or "traveller" }}, I can see some of your details from our partner portal. Let me know how I can help with your travel insurance today.</div>
+                </div>
+            </div>
+            <form id="chat-form" class="chat-form">
+                <label class="sr-only" for="message">Message</label>
+                <textarea id="message" name="message" rows="3" placeholder="Ask about coverage, recommendations, or next steps"></textarea>
+                <div class="chat-actions">
+                    <small id="status" class="muted"></small>
+                    <button type="submit">Send</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <script src="/integration/static/chat.js" defer></script>
+</body>
+</html>

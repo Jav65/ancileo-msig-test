@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     policy_documents_dir: Path = Field(BASE_DIR / "../Policy_Wordings", env="POLICY_DOCUMENTS_DIR")
     twilio_account_sid: str = Field("", env=["TWILIO_ACCOUNT_SID", "TWILIO_SID"])
     twilio_auth_token: str = Field("", env="TWILIO_AUTH_TOKEN")
+    session_secret: str = Field("change-this-session-secret", env="SESSION_SECRET")
 
     class Config:
         env_file = BASE_DIR / ".env"
