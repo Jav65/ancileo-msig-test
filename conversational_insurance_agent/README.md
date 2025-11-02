@@ -85,10 +85,11 @@ The portal exercises the "seamless integration" workflow: when a traveller profi
 | `policy_research`  | LangGraph agent that surfaces eligible benefits from the taxonomy    |
 | `claims_recommendation` | Generate risk-aware plan suggestions using historical claims   |
 | `document_ingest`  | Parse itineraries and bookings for traveller, date, and cost signals |
-| `travel_insurance_quote` | Retrieve Ancileo pricing; every quoted premium must come from this API |
 | `payment_checkout` | Create a checkout session via Stripe or the hackathon payments stack |
 | `payment_status`   | Poll the latest status of a checkout session                         |
 | `travel_insurance_purchase` | Finalise policy issuance with Ancileo after payment success |
+
+<!-- `travel_insurance_quote` tool temporarily disabled; LLM now provides pricing guidance -->
 
 The orchestrator instructs the LLM to emit JSON whenever a tool call is required, executes the tool, then resumes the conversation with the result to maintain fluid dialogue.
 
@@ -100,8 +101,8 @@ The orchestrator instructs the LLM to emit JSON whenever a tool call is required
 Persisting the session ID ensures Redis-backed memory keeps context even when users switch devices or channels.
 
 ## Payments Flow
-1. Agent fetches live pricing via `travel_insurance_quote` (Ancileo API) and surfaces the recommended offer.
-2. Agent calls `payment_checkout` with the selected offer's `productCode`, price in minor units, and success/cancel URLs. Metadata should include `quoteId`, `offerId`, and traveller references.
+1. Agent derives a pricing recommendation within the conversation (Ancileo pricing API temporarily unavailable) and explains the assumptions.
+2. Agent calls `payment_checkout` with the agreed plan_code, price in minor units, and success/cancel URLs. Metadata should include any available `quoteId`, `offerId`, and traveller references.
 3. Service attempts to use the provided payments microservice (`Payments/`). If unavailable, it falls back to direct Stripe Checkout using configured keys.
 4. Poll `payment_status` or let the webhook update the conversation before delivering policy documents; once marked successful, call `travel_insurance_purchase` to finalise issuance with Ancileo.
 

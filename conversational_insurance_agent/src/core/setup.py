@@ -90,85 +90,86 @@ def build_orchestrator() -> ConversationalOrchestrator:
             },
             handler=lambda file_path: doc_tool.parse_trip_document(file_path=file_path),
         ),
-        ToolSpec(
-            name="travel_insurance_quote",
-            description=(
-                "Fetch live travel insurance quotation from the Ancileo API. "
-                "Always call this tool to obtain premiums before sharing price information."
-            ),
-            schema={
-                "type": "object",
-                "properties": {
-                    "market": {
-                        "type": "string",
-                        "description": "Market code such as 'SG'. Defaults to ANCILEO_DEFAULT_MARKET.",
-                    },
-                    "languageCode": {
-                        "type": "string",
-                        "description": "Language preference, e.g. 'en'. Defaults to ANCILEO_DEFAULT_LANGUAGE.",
-                    },
-                    "channel": {
-                        "type": "string",
-                        "description": "Distribution channel identifier, defaults to ANCILEO_DEFAULT_CHANNEL.",
-                    },
-                    "deviceType": {
-                        "type": "string",
-                        "description": "Device context such as 'DESKTOP'. Defaults to ANCILEO_DEFAULT_DEVICE.",
-                    },
-                    "context": {
-                        "type": "object",
-                        "description": "Trip context required by the pricing endpoint.",
-                        "properties": {
-                            "tripType": {
-                                "type": "string",
-                                "description": "'ST' for single trip or 'RT' for round trip (case insensitive variants accepted).",
-                            },
-                            "departureDate": {
-                                "type": "string",
-                                "description": "Departure date in YYYY-MM-DD format.",
-                            },
-                            "returnDate": {
-                                "type": "string",
-                                "description": "Return date in YYYY-MM-DD format (required for round trips).",
-                            },
-                            "departureCountry": {
-                                "type": "string",
-                                "description": "ISO country code where the trip starts.",
-                            },
-                            "arrivalCountry": {
-                                "type": "string",
-                                "description": "ISO country code of the destination.",
-                            },
-                            "adultsCount": {
-                                "type": "integer",
-                                "description": "Number of adults travelling (must be >= 1).",
-                                "minimum": 1,
-                            },
-                            "childrenCount": {
-                                "type": "integer",
-                                "description": "Number of children travelling (defaults to 0).",
-                                "minimum": 0,
-                            },
-                        },
-                        "required": [
-                            "tripType",
-                            "departureDate",
-                            "departureCountry",
-                            "arrivalCountry",
-                            "adultsCount",
-                        ],
-                    },
-                },
-                "required": ["context"],
-            },
-            handler=ancileo_api.quote,
-            is_async=True,
-        ),
+        # Ancileo real-time pricing is disabled; LLM now drives quotes directly from conversation context.
+        # ToolSpec(
+        #     name="travel_insurance_quote",
+        #     description=(
+        #         "Fetch live travel insurance quotation from the Ancileo API. "
+        #         "Always call this tool to obtain premiums before sharing price information."
+        #     ),
+        #     schema={
+        #         "type": "object",
+        #         "properties": {
+        #             "market": {
+        #                 "type": "string",
+        #                 "description": "Market code such as 'SG'. Defaults to ANCILEO_DEFAULT_MARKET.",
+        #             },
+        #             "languageCode": {
+        #                 "type": "string",
+        #                 "description": "Language preference, e.g. 'en'. Defaults to ANCILEO_DEFAULT_LANGUAGE.",
+        #             },
+        #             "channel": {
+        #                 "type": "string",
+        #                 "description": "Distribution channel identifier, defaults to ANCILEO_DEFAULT_CHANNEL.",
+        #             },
+        #             "deviceType": {
+        #                 "type": "string",
+        #                 "description": "Device context such as 'DESKTOP'. Defaults to ANCILEO_DEFAULT_DEVICE.",
+        #             },
+        #             "context": {
+        #                 "type": "object",
+        #                 "description": "Trip context required by the pricing endpoint.",
+        #                 "properties": {
+        #                     "tripType": {
+        #                         "type": "string",
+        #                         "description": "'ST' for single trip or 'RT' for round trip (case insensitive variants accepted).",
+        #                     },
+        #                     "departureDate": {
+        #                         "type": "string",
+        #                         "description": "Departure date in YYYY-MM-DD format.",
+        #                     },
+        #                     "returnDate": {
+        #                         "type": "string",
+        #                         "description": "Return date in YYYY-MM-DD format (required for round trips).",
+        #                     },
+        #                     "departureCountry": {
+        #                         "type": "string",
+        #                         "description": "ISO country code where the trip starts.",
+        #                     },
+        #                     "arrivalCountry": {
+        #                         "type": "string",
+        #                         "description": "ISO country code of the destination.",
+        #                     },
+        #                     "adultsCount": {
+        #                         "type": "integer",
+        #                         "description": "Number of adults travelling (must be >= 1).",
+        #                         "minimum": 1,
+        #                     },
+        #                     "childrenCount": {
+        #                         "type": "integer",
+        #                         "description": "Number of children travelling (defaults to 0).",
+        #                         "minimum": 0,
+        #                     },
+        #                 },
+        #                 "required": [
+        #                     "tripType",
+        #                     "departureDate",
+        #                     "departureCountry",
+        #                     "arrivalCountry",
+        #                     "adultsCount",
+        #                 ],
+        #             },
+        #         },
+        #         "required": ["context"],
+        #     },
+        #     handler=ancileo_api.quote,
+        #     is_async=True,
+        # ),
         ToolSpec(
             name="travel_insurance_purchase",
             description=(
                 "Complete the policy issuance with the Ancileo purchase API after confirming payment. "
-                "Use the quoteId/offerId returned from travel_insurance_quote and traveller identity data."
+                "Use the quoteId/offerId gathered during the conversation together with traveller identity data."
             ),
             schema={
                 "type": "object",
@@ -293,7 +294,7 @@ def build_orchestrator() -> ConversationalOrchestrator:
             name="payment_checkout",
             description=(
                 "Create and monitor a payment checkout session for purchasing a travel insurance plan. "
-                "Use the productCode returned from travel_insurance_quote as the plan_code and include quote/policy identifiers in metadata."
+                "Provide the plan_code, price, and metadata as determined by the LLM-guided consultation."
             ),
             schema={
                 "type": "object",
