@@ -23,3 +23,4 @@ structlog
 stripe
 PyYAML
 pytest
+jinja2

@@ -11,6 +11,7 @@ from ..config import get_settings
 from ..state.client_context import ClientDatum
 from ..state.session_store import ConversationSessionStore
 from ..utils.logging import logger
+from .profile_guidance import compose_profile_guidance
 from .tooling import ToolSpec
 
 
@@ -40,6 +41,8 @@ class ConversationalOrchestrator:
     ) -> Dict[str, Any]:
         conversation = self._session_store.get(session_id)
         history = conversation.get("messages", [])
+        clients = self._session_store.get_clients(session_id)
+        guidance = compose_profile_guidance(clients)
 
         tool_descriptions = "\n".join(
             f"- {tool.name}: {tool.description} | Schema: {json.dumps(tool.schema)}"
@@ -57,6 +60,14 @@ class ConversationalOrchestrator:
                 f"{TOOL_INSTRUCTION}"
             ),
         }
+
+        if guidance:
+            logger.info(
+                "orchestrator.profile_guidance",
+                session_id=session_id,
+                status=guidance.status,
+            )
+            system_message["content"] += "\n\n" + guidance.summary_text
 
         messages: List[Dict[str, str]] = [system_message, *history]
         messages.append({"role": "user", "content": user_message})

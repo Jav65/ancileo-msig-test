@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partner Portal Login</title>
+    <link rel="stylesheet" href="/integration/static/styles.css">
+</head>
+<body class="portal-bg">
+    <main class="login-container">
+        <section class="card">
+            <h1>Travel Insurance Partner Portal</h1>
+            <p class="muted">Sign in with a demo account to review traveller insights and chat with Aurora.</p>
+
+            {% if error %}
+            <div class="alert">{{ error }}</div>
+            {% endif %}
+
+            <form method="post" class="form-stack">
+                <label for="username">Email</label>
+                <input id="username" name="username" type="email" placeholder="alice@example.com" required>
+
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" placeholder="??????" required>
+
+                <button type="submit">Login</button>
+            </form>
+
+            <p class="muted small">
+                Demo accounts:
+                <code>alice@example.com / travel123</code>,
+                <code>casey@example.com / explore</code>,
+                <code>ben@travelco.sg / partner</code>
+            </p>
+        </section>
+    </main>
+</body>
+</html>

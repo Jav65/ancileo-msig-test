@@ -19,6 +19,7 @@ from fastapi import (
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
+from starlette.middleware.sessions import SessionMiddleware
 
 try:  # pragma: no cover - pydantic v2 optional
     from pydantic import ConfigDict
@@ -33,6 +34,7 @@ from .services.media_ingestion import GroqMediaIngestor, MediaAttachment
 from .services.policy_taxonomy import IngestCfg, PolicyIngestor, extract_all_layers
 from .state.client_context import ClientDatum
 from .utils.logging import configure_logging, logger
+from .web import mount_integration_static, router as integration_router
 
 
 class ChatRequest(BaseModel):
@@ -92,15 +94,30 @@ class TelegramWebhook(BaseModel):
 
 configure_logging()
 app = FastAPI(title="Ancileo Conversational Insurance Platform", version="0.1.0")
+settings = get_settings()
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax")
+mount_integration_static(app)
+app.include_router(integration_router)
+
 _orchestrator: ConversationalOrchestrator | None = None
 _media_ingestor: GroqMediaIngestor | None = None
 _policy_ingestor: PolicyIngestor | None = None
+app.state.settings = settings
+app.state.orchestrator = None
 
 
 def get_orchestrator() -> ConversationalOrchestrator:
     global _orchestrator
-    if _orchestrator is None:
-        _orchestrator = build_orchestrator()
+    if _orchestrator is not None:
+        return _orchestrator
+
+    existing = getattr(app.state, "orchestrator", None)
+    if isinstance(existing, ConversationalOrchestrator):
+        _orchestrator = existing
+        return _orchestrator
+
+    _orchestrator = build_orchestrator()
+    app.state.orchestrator = _orchestrator
     return _orchestrator
 
 
