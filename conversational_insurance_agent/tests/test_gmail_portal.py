@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+from datetime import date
 
 import pytest
 from fastapi import HTTPException
@@ -12,6 +14,7 @@ os.environ.setdefault("GROQ_API_KEY", "test-key")
 from src.main import app
 from src.gmail_portal import router
 from src.config import Settings
+from src.state.client_context import ClientDatum, TripDetails
 
 
 @pytest.fixture(autouse=True)
@@ -68,3 +71,23 @@ def test_build_flow_rejects_non_local_insecure_redirect() -> None:
     exc = exc_info.value
     assert exc.status_code == 500
     assert "plain HTTP" in exc.detail
+
+
+def test_gmail_client_serialization_is_json_safe() -> None:
+    client = ClientDatum(
+        trips=[
+            TripDetails(
+                destination="Tokyo",
+                start_date=date(2024, 5, 1),
+                end_date=date(2024, 5, 10),
+            )
+        ]
+    )
+
+    payload = router._serialize_client(client)
+
+    assert isinstance(payload["trips"], list)
+    assert payload["trips"][0]["startDate"] == "2024-05-01"
+    assert payload["trips"][0]["endDate"] == "2024-05-10"
+
+    json.dumps(payload)  # Should not raise TypeError

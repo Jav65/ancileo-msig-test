@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from ..config import Settings, get_settings
 from ..core.orchestrator import ConversationalOrchestrator
 from ..services.gmail_ticket_scraper import GmailDataError, fetch_travel_client
-from ..state.client_context import ClientDatum
+from ..state.client_context import ClientDatum, serialize_client
 from ..utils.logging import logger
 
 
@@ -185,10 +185,7 @@ async def _fetch_userinfo(credentials: Credentials) -> Dict[str, Any]:
 
 
 def _serialize_client(client: ClientDatum) -> Dict[str, Any]:
-    serializer = getattr(client, "model_dump", None)
-    if callable(serializer):
-        return serializer(by_alias=True, exclude_none=True)
-    return client.dict(by_alias=True, exclude_none=True)  # type: ignore[return-value]
+    return serialize_client(client)
 
 
 def _deserialize_client(payload: Dict[str, Any]) -> ClientDatum:
