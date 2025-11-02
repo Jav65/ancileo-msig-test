@@ -177,11 +177,15 @@ def merge_client_records(
     return merged
 
 
+def serialize_client(client: ClientDatum) -> Dict[str, Any]:
+    raw = _model_dump(client, exclude_none=True, by_alias=True)
+    return _to_jsonable(raw)
+
+
 def serialize_clients(clients: List[ClientDatum]) -> List[Dict[str, Any]]:
     serialized: List[Dict[str, Any]] = []
     for client in clients:
-        raw = _model_dump(client, exclude_none=True, by_alias=True)
-        serialized.append(_to_jsonable(raw))
+        serialized.append(serialize_client(client))
     return serialized
 
 
