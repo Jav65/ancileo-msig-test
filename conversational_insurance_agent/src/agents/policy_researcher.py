@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict, cast
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, TypedDict, cast
 
 import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -113,15 +113,28 @@ class PolicyResearchAgent:
     # State nodes
     # ------------------------------------------------------------------
     def _prepare_context(self, state: AgentState) -> AgentState:
-        products = list(state.get("recommended_products") or [])
-        tiers = list(state.get("tiers") or [])
+        resolved_products, resolved_tiers, used_fallback = self._resolve_products_and_tiers(
+            state.get("recommended_products"),
+            state.get("tiers"),
+        )
 
-        if not products:
+        if not resolved_products:
             logger.info("policy_research_agent.no_products", user_query=state.get("user_query"))
             state["taxonomy_context"] = ""
+            state["recommended_products"] = []
+            state["tiers"] = []
             return state
 
-        taxonomy_text = self._render_taxonomy_context(products, tiers)
+        if used_fallback:
+            logger.info(
+                "policy_research_agent.fallback_products",
+                product_count=len(resolved_products),
+            )
+
+        state["recommended_products"] = resolved_products
+        state["tiers"] = resolved_tiers
+
+        taxonomy_text = self._render_taxonomy_context(resolved_products, resolved_tiers)
         state["taxonomy_context"] = taxonomy_text
         return state
 
@@ -197,6 +210,25 @@ class PolicyResearchAgent:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _resolve_products_and_tiers(
+        self,
+        raw_products: Optional[Sequence[str]],
+        raw_tiers: Optional[Sequence[str]],
+    ) -> Tuple[List[str], List[str], bool]:
+        products = self._normalize_product_list(raw_products)
+        tiers = list(raw_tiers or [])
+
+        if products:
+            normalized_tiers = self._normalize_tiers(tiers, len(products))
+            return products, normalized_tiers, False
+
+        fallback_products = self._extract_all_taxonomy_products()
+        if not fallback_products:
+            return [], [], False
+
+        normalized_tiers = self._normalize_tiers(tiers, len(fallback_products))
+        return fallback_products, normalized_tiers, True
+
     def _render_taxonomy_context(
         self,
         products: Sequence[str],
@@ -312,6 +344,69 @@ class PolicyResearchAgent:
         except json.JSONDecodeError:
             logger.warning("policy_research_agent.parse_failure", preview=payload[:200])
             return None
+
+    @staticmethod
+    def _normalize_product_list(raw_products: Optional[Sequence[str]]) -> List[str]:
+        if not raw_products:
+            return []
+
+        normalized: List[str] = []
+        for item in raw_products:
+            if not isinstance(item, str):
+                continue
+            trimmed = item.strip()
+            if not trimmed:
+                continue
+            normalized.append(trimmed)
+
+        return normalized
+
+    @staticmethod
+    def _normalize_tiers(raw_tiers: Sequence[Any], target_length: int) -> List[str]:
+        tiers: List[str] = []
+        for value in list(raw_tiers or [])[:target_length]:
+            if isinstance(value, str):
+                tiers.append(value.strip())
+            else:
+                tiers.append("")
+
+        if len(tiers) < target_length:
+            tiers.extend([""] * (target_length - len(tiers)))
+
+        return tiers
+
+    def _extract_all_taxonomy_products(self) -> List[str]:
+        payload = self._taxonomy_payload
+        if not isinstance(payload, dict):
+            return []
+
+        declared_products = payload.get("products")
+        if isinstance(declared_products, list):
+            normalized = [str(item).strip() for item in declared_products if isinstance(item, str) and item.strip()]
+            if normalized:
+                return normalized
+
+        layers = payload.get("layers")
+        if not isinstance(layers, dict):
+            return []
+
+        product_names: Set[str] = set()
+        for layer in layers.values():
+            if not isinstance(layer, list):
+                continue
+            for entry in layer:
+                if not isinstance(entry, dict):
+                    continue
+                products_field = entry.get("products")
+                if not isinstance(products_field, dict):
+                    continue
+                for name in products_field.keys():
+                    if isinstance(name, str):
+                        trimmed = name.strip()
+                        if trimmed:
+                            product_names.add(trimmed)
+
+        return sorted(product_names)
 
     @staticmethod
     def _load_taxonomy(path: Path) -> Dict[str, Any]:

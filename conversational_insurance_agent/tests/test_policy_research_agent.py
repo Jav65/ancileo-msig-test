@@ -73,8 +73,9 @@ def test_policy_research_agent_parses_llm_payload(taxonomy_path: Path) -> None:
     assert dummy_llm.invocations[0]["response_format"] == {"type": "json_object"}
 
 
-def test_policy_research_agent_handles_missing_products(taxonomy_path: Path) -> None:
-    dummy_llm = DummyLLM("{}")
+def test_policy_research_agent_falls_back_to_taxonomy_products(taxonomy_path: Path) -> None:
+    response_payload = {"products": [], "reasoning": ""}
+    dummy_llm = DummyLLM(json.dumps(response_payload))
     agent = PolicyResearchAgent(
         settings=Settings(
             groq_api_key="test-key",
@@ -85,14 +86,18 @@ def test_policy_research_agent_handles_missing_products(taxonomy_path: Path) -> 
     )
 
     result = agent.run(
-        user_query="No recommendation yet",
+        user_query="What is covered?",
         recommended_products=[],
         tiers=[],
         chat_history=[],
     )
 
     assert result.products == []
-    assert not dummy_llm.invocations, "LLM should not be called when no products are provided"
+    assert dummy_llm.invocations, "LLM should be invoked when falling back to taxonomy products"
+    prompt = dummy_llm.invocations[0]["messages"][1].content
+    assert "- Product A" in prompt
+    assert "- Product B" in prompt
+    assert "- Product C" in prompt
 
 
 def test_policy_research_agent_reload_taxonomy_when_file_changes(tmp_path: Path) -> None:
