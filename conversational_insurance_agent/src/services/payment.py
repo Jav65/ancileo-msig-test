@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from typing import Any, Dict, Optional
 
 import httpx
@@ -28,6 +29,8 @@ class PaymentGateway:
         customer_email: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        sanitized_metadata = self._stringify_metadata(metadata)
+
         payload = {
             "plan_code": plan_code,
             "amount": amount,
@@ -35,7 +38,7 @@ class PaymentGateway:
             "success_url": success_url,
             "cancel_url": cancel_url,
             "customer_email": customer_email,
-            "metadata": metadata or {},
+            "metadata": sanitized_metadata,
         }
 
         logger.info("payments.create_session", plan_code=plan_code, amount=amount)
@@ -79,7 +82,7 @@ class PaymentGateway:
             success_url=success_url,
             cancel_url=cancel_url,
             customer_email=customer_email,
-            metadata=metadata or {},
+            metadata=sanitized_metadata,
         )
 
         return {
@@ -171,3 +174,26 @@ class PaymentGateway:
         if inspect.isawaitable(result):
             return await result
         return result
+
+    @staticmethod
+    def _stringify_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, str]:
+        if not metadata:
+            return {}
+
+        stringified: Dict[str, str] = {}
+        for key, value in metadata.items():
+            if value is None:
+                continue
+            stringified[str(key)] = PaymentGateway._metadata_value_to_string(value)
+        return stringified
+
+    @staticmethod
+    def _metadata_value_to_string(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        try:
+            return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(value)
