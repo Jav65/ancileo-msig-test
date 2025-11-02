@@ -62,10 +62,10 @@ class ConversationalOrchestrator:
                 f"Channel: {channel}.\n"
                 f"Available Tools:\n{tool_descriptions}\n\n"
                 f"{TOOL_INSTRUCTION}\n\n"
-                "Pricing guidance: never estimate or reuse premiums. Always call the "
-                "travel_insurance_quote tool (Ancileo pricing API) before sharing any price.\n"
+                "Pricing guidance: the Ancileo pricing API is unavailable. Thoughtfully derive premiums "
+                "from the traveller's context and clearly explain your assumptions.\n"
                 "Fulfilment guidance: once payment_status confirms a successful checkout, "
-                "invoke travel_insurance_purchase with the quoteId/offer information to issue the policy."
+                "invoke travel_insurance_purchase with the quoteId/offer information shared in the conversation to issue the policy."
             ),
         }
 

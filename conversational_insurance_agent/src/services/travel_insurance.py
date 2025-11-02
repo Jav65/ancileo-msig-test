@@ -28,22 +28,11 @@ class AncileoTravelAPI:
         self._timeout = 15.0
 
     async def quote(self, **payload: Any) -> Dict[str, Any]:
-        """Call the Ancileo quotation endpoint and return the JSON payload.
+        """Ancileo quotation endpoint is currently offline for pricing."""
 
-        The integration currently requires a fixed payload provided by the
-        stakeholder, so any payload supplied by the caller is ignored in favour
-        of that hard-coded request.
-        """
-
-        request = self._hardcoded_quote_payload()
-        data = await self._post("/pricing", request)
-
-        quote_id = data.get("quoteId") if isinstance(data, dict) else None
-        offers = data.get("offers") if isinstance(data, dict) else None
-        offers_count = len(offers) if isinstance(offers, list) else 0
-        logger.info("ancileo.quote.success", quote_id=quote_id, offers=offers_count)
-
-        return data
+        raise AncileoAPIError(
+            "Ancileo pricing API temporarily disabled; derive premiums within the LLM flow."
+        )
 
     @staticmethod
     def _hardcoded_quote_payload() -> Dict[str, Any]:
