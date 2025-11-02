@@ -16,7 +16,7 @@ def test_compose_profile_guidance_identifies_rich_profile() -> None:
                 "email_address": "alice@example.com",
                 "phone_number": "+65 8123 4455",
                 "date_of_birth": "1990-06-15",
-                "place_of_residence": "Singapore",
+                "place_of_residence": "Malaysia",
                 "passport_number": "E1234567K",
             },
             "trips": [
@@ -54,8 +54,8 @@ def test_compose_profile_guidance_identifies_partial_profile() -> None:
             },
             "trips": [
                 {
-                    "trip_id": "casey-europe-2025",
-                    "destination": "Western Europe",
+                    "trip_id": "casey-france-2025",
+                    "destination": "France",
                     "start_date": "2025-04-03",
                     "trip_type": "single",
                 }
