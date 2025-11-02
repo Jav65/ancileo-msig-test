@@ -65,8 +65,8 @@ async def test_quote_normalises_context_and_defaults(monkeypatch: pytest.MonkeyP
             "tripType": "round",
             "departureDate": "2025-09-30",
             "returnDate": "2025-10-05",
-            "departureCountry": "SG",
-            "arrivalCountry": "CN",
+            "departureCountry": "sg",
+            "arrivalCountry": "cn",
             "adultsCount": 2,
         }
     }
@@ -84,6 +84,42 @@ async def test_quote_normalises_context_and_defaults(monkeypatch: pytest.MonkeyP
     assert request_json["deviceType"] == "DESKTOP"
     assert request_json["context"]["tripType"] == "RT"
     assert request_json["context"]["childrenCount"] == 0
+    assert request_json["context"]["arrivalCountry"] == "CN"
+    assert request_json["context"]["departureCountry"] == "SG"
+
+
+@pytest.mark.asyncio
+async def test_quote_normalises_dates_and_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    client_holder: Dict[str, Any] = {}
+
+    def _client_factory(*args: Any, **kwargs: Any) -> _CapturingClient:
+        client = _CapturingClient(*args, **kwargs)
+        client_holder["client"] = client
+        return client
+
+    monkeypatch.setattr("src.services.travel_insurance.httpx.AsyncClient", _client_factory)
+
+    api = AncileoTravelAPI(settings=_DummySettings())
+
+    quote_payload = {
+        "deviceType": " mobile ",
+        "context": {
+            "tripType": "st",
+            "departureDate": "1 Nov 2025",
+            "returnDate": "15 Nov 2025",
+            "departureCountry": "sg",
+            "arrivalCountry": "cn",
+            "adultsCount": "1",
+            "childrenCount": "0",
+        },
+    }
+
+    await api.quote(**quote_payload)
+
+    request_json = client_holder["client"].captured["json"]  # type: ignore[index]
+    assert request_json["deviceType"] == "MOBILE"
+    assert request_json["context"]["departureDate"] == "2025-11-01"
+    assert request_json["context"]["returnDate"] == "2025-11-15"
 
 
 @pytest.mark.asyncio
@@ -132,6 +168,7 @@ async def test_purchase_requires_api_key() -> None:
             "email": "john.doe@gmail.com",
             "phoneType": "mobile",
             "phoneNumber": "081111111",
+            "relationship": "main",
             "address": "12 Test Street",
             "city": "SG",
             "zipCode": "12345",

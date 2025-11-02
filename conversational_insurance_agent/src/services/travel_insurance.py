@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional
 
+import re
+from datetime import date, datetime
+
 import httpx
 
 from ..config import Settings, get_settings
@@ -65,9 +68,9 @@ class AncileoTravelAPI:
             or self._settings.ancileo_default_language,
             "channel": self._coerce_str(payload.get("channel"))
             or self._settings.ancileo_default_channel,
-            "deviceType": self._coerce_str(payload.get("deviceType"))
-            or self._settings.ancileo_default_device,
         }
+
+        request["deviceType"] = self._normalize_device_type(payload.get("deviceType"))
 
         context = payload.get("context")
         if not isinstance(context, dict):
@@ -83,9 +86,10 @@ class AncileoTravelAPI:
         if trip_type is None:
             raise ValueError("context.tripType must be 'ST'/'RT' or a recognisable trip type")
 
-        departure_date = self._require_str(context, "departureDate")
-        arrival_country = self._require_str(context, "arrivalCountry")
-        departure_country = self._coerce_str(context.get("departureCountry")) or self._settings.ancileo_default_market
+        departure_date = self._normalize_date_value(context.get("departureDate"), field="departureDate")
+        arrival_country = self._normalize_country_code(context.get("arrivalCountry"), field="arrivalCountry")
+        departure_country_raw = context.get("departureCountry") or self._settings.ancileo_default_market
+        departure_country = self._normalize_country_code(departure_country_raw, field="departureCountry")
 
         adults_count = self._coerce_int(context.get("adultsCount"), minimum=1, field="adultsCount")
         children_count = self._coerce_int(context.get("childrenCount"), minimum=0, field="childrenCount", default=0)
@@ -100,11 +104,11 @@ class AncileoTravelAPI:
         }
 
         if trip_type == "RT":
-            return_date = self._require_str(context, "returnDate")
+            return_date = self._normalize_date_value(context.get("returnDate"), field="returnDate")
             normalized["returnDate"] = return_date
         elif context.get("returnDate"):
             # Allow callers to submit returnDate for ST trips; API tolerates it but we normalise casing
-            normalized["returnDate"] = self._coerce_str(context.get("returnDate"))
+            normalized["returnDate"] = self._normalize_date_value(context.get("returnDate"), field="returnDate")
 
         return normalized
 
@@ -250,6 +254,53 @@ class AncileoTravelAPI:
         text = str(value).strip()
         return text or None
 
+    def _normalize_device_type(self, value: Any) -> str:
+        raw = self._coerce_str(value)
+        if not raw:
+            raw = self._settings.ancileo_default_device
+
+        cleaned = re.sub(r"[\s_-]+", " ", raw).strip().upper()
+        cleaned = cleaned.replace(" ", "")
+
+        aliases = {
+            "SMARTPHONE": "MOBILE",
+            "PHONE": "MOBILE",
+            "CELL": "MOBILE",
+            "LAPTOP": "DESKTOP",
+            "PC": "DESKTOP",
+            "TABLETPC": "TABLET",
+        }
+
+        normalized = aliases.get(cleaned, cleaned)
+
+        allowed = {"DESKTOP", "MOBILE", "TABLET", "OTHER"}
+        if normalized not in allowed:
+            raise ValueError("deviceType must be one of DESKTOP/MOBILE/TABLET/OTHER")
+
+        return normalized
+
+    def _normalize_date_value(self, value: Any, *, field: str) -> str:
+        text = self._coerce_str(value)
+        if not text:
+            raise ValueError(f"Field '{field}' is required and cannot be empty")
+
+        normalized = self._coerce_date_string(text)
+        if normalized is None:
+            raise ValueError(f"Field '{field}' must be a valid date in YYYY-MM-DD format")
+
+        return normalized
+
+    def _normalize_country_code(self, value: Any, *, field: str) -> str:
+        text = self._coerce_str(value)
+        if not text:
+            raise ValueError(f"Field '{field}' is required and cannot be empty")
+
+        normalized = text.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2}", normalized):
+            raise ValueError(f"Field '{field}' must be a valid ISO country code")
+
+        return normalized
+
     @staticmethod
     def _require_str(payload: Dict[str, Any], field: str) -> str:
         value = payload.get(field)
@@ -315,6 +366,60 @@ class AncileoTravelAPI:
             return "ST"
         if text in {"rt", "round", "round_trip", "roundtrip", "return"}:
             return "RT"
+        return None
+
+    @staticmethod
+    def _coerce_date_string(value: str) -> Optional[str]:
+        candidate = value.strip()
+        if not candidate:
+            return None
+
+        # Normalise common separators
+        candidate = candidate.replace("/", "-").replace(".", "-")
+        candidate = re.sub(r"\s+", " ", candidate)
+
+        # Direct YYYY-MM-DD or YYYY-M-D
+        match = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", candidate)
+        if match:
+            year, month, day = map(int, match.groups())
+            try:
+                return date(year, month, day).isoformat()
+            except ValueError:
+                return None
+
+        iso_candidate = candidate
+        if iso_candidate.endswith("Z"):
+            iso_candidate = iso_candidate[:-1] + "+00:00"
+
+        try:
+            parsed = datetime.fromisoformat(iso_candidate)
+            return parsed.date().isoformat()
+        except ValueError:
+            pass
+
+        # Additional relaxed formats
+        patterns = [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%d-%m-%Y",
+            "%d/%m/%Y",
+            "%d %b %Y",
+            "%d %B %Y",
+            "%b %d %Y",
+            "%B %d %Y",
+        ]
+
+        for pattern in patterns:
+            try:
+                parsed = datetime.strptime(candidate, pattern)
+                return parsed.date().isoformat()
+            except ValueError:
+                continue
+
         return None
 
     @staticmethod
