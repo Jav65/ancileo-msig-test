@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     twilio_account_sid: str = Field("", env=["TWILIO_ACCOUNT_SID", "TWILIO_SID"])
     twilio_auth_token: str = Field("", env="TWILIO_AUTH_TOKEN")
     session_secret: str = Field("change-this-session-secret", env="SESSION_SECRET")
+    ancileo_api_key: str = Field("", env="ANCILEO_API_KEY")
+    ancileo_base_url: str = Field(
+        "https://dev.api.ancileo.com/v1/travel/front",
+        env="ANCILEO_BASE_URL",
+    )
+    ancileo_default_market: str = Field("SG", env="ANCILEO_DEFAULT_MARKET")
+    ancileo_default_language: str = Field("en", env="ANCILEO_DEFAULT_LANGUAGE")
+    ancileo_default_channel: str = Field("white-label", env="ANCILEO_DEFAULT_CHANNEL")
+    ancileo_default_device: str = Field("DESKTOP", env="ANCILEO_DEFAULT_DEVICE")
 
     class Config:
         env_file = BASE_DIR / ".env"
