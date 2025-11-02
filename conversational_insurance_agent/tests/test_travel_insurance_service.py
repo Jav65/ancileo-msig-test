@@ -4,6 +4,22 @@ import pytest
 
 from src.services.travel_insurance import AncileoAPIError, AncileoTravelAPI
 
+EXPECTED_HARDCODED_QUOTE_PAYLOAD = {
+    "market": "SG",
+    "languageCode": "en",
+    "channel": "white-label",
+    "deviceType": "DESKTOP",
+    "context": {
+        "tripType": "ST",
+        "departureDate": "2025-11-04",
+        "returnDate": "2025-11-15",
+        "departureCountry": "SG",
+        "arrivalCountry": "CN",
+        "adultsCount": 1,
+        "childrenCount": 0,
+    },
+}
+
 
 class _DummySettings:
     ancileo_base_url = "https://ancileo.test/v1/travel/front"
@@ -48,7 +64,7 @@ class _CapturingClient:
 
 
 @pytest.mark.asyncio
-async def test_quote_normalises_context_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_quote_uses_hardcoded_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     client_holder: Dict[str, Any] = {}
 
     def _client_factory(*args: Any, **kwargs: Any) -> _CapturingClient:
@@ -60,8 +76,8 @@ async def test_quote_normalises_context_and_defaults(monkeypatch: pytest.MonkeyP
 
     api = AncileoTravelAPI(settings=_DummySettings())
 
-    quote_payload = {
-        "context": {
+    data = await api.quote(
+        context={
             "tripType": "round",
             "departureDate": "2025-09-30",
             "returnDate": "2025-10-05",
@@ -69,27 +85,18 @@ async def test_quote_normalises_context_and_defaults(monkeypatch: pytest.MonkeyP
             "arrivalCountry": "cn",
             "adultsCount": 2,
         }
-    }
-
-    data = await api.quote(**quote_payload)
+    )
 
     assert data["quoteId"] == "quote-123"
     captured = client_holder["client"].captured  # type: ignore[index]
     assert captured["url"] == "https://ancileo.test/v1/travel/front/pricing"
     assert captured["headers"]["x-api-key"] == "test-key"
     request_json = captured["json"]
-    assert request_json["market"] == "SG"
-    assert request_json["languageCode"] == "en"
-    assert request_json["channel"] == "white-label"
-    assert request_json["deviceType"] == "DESKTOP"
-    assert request_json["context"]["tripType"] == "RT"
-    assert request_json["context"]["childrenCount"] == 0
-    assert request_json["context"]["arrivalCountry"] == "CN"
-    assert request_json["context"]["departureCountry"] == "SG"
+    assert request_json == EXPECTED_HARDCODED_QUOTE_PAYLOAD
 
 
 @pytest.mark.asyncio
-async def test_quote_normalises_dates_and_device(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_quote_ignores_supplied_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     client_holder: Dict[str, Any] = {}
 
     def _client_factory(*args: Any, **kwargs: Any) -> _CapturingClient:
@@ -101,29 +108,25 @@ async def test_quote_normalises_dates_and_device(monkeypatch: pytest.MonkeyPatch
 
     api = AncileoTravelAPI(settings=_DummySettings())
 
-    quote_payload = {
-        "deviceType": " mobile ",
-        "context": {
-            "tripType": "st",
-            "departureDate": "1 Nov 2025",
-            "returnDate": "15 Nov 2025",
-            "departureCountry": "sg",
-            "arrivalCountry": "cn",
-            "adultsCount": "1",
-            "childrenCount": "0",
+    await api.quote(
+        deviceType="mobile",
+        context={
+            "tripType": "rt",
+            "departureDate": "2000-01-01",
+            "returnDate": "2000-01-02",
+            "departureCountry": "us",
+            "arrivalCountry": "gb",
+            "adultsCount": 4,
+            "childrenCount": 3,
         },
-    }
-
-    await api.quote(**quote_payload)
+    )
 
     request_json = client_holder["client"].captured["json"]  # type: ignore[index]
-    assert request_json["deviceType"] == "MOBILE"
-    assert request_json["context"]["departureDate"] == "2025-11-01"
-    assert request_json["context"]["returnDate"] == "2025-11-15"
+    assert request_json == EXPECTED_HARDCODED_QUOTE_PAYLOAD
 
 
 @pytest.mark.asyncio
-async def test_quote_payload_matches_required_format(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_quote_payload_matches_expected_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     client_holder: Dict[str, Any] = {}
 
     def _client_factory(*args: Any, **kwargs: Any) -> _CapturingClient:
@@ -135,26 +138,10 @@ async def test_quote_payload_matches_required_format(monkeypatch: pytest.MonkeyP
 
     api = AncileoTravelAPI(settings=_DummySettings())
 
-    expected_payload = {
-        "market": "SG",
-        "languageCode": "en",
-        "channel": "white-label",
-        "deviceType": "DESKTOP",
-        "context": {
-            "tripType": "ST",
-            "departureDate": "2025-11-01",
-            "returnDate": "2025-11-15",
-            "departureCountry": "SG",
-            "arrivalCountry": "CN",
-            "adultsCount": 1,
-            "childrenCount": 0,
-        },
-    }
-
-    await api.quote(**expected_payload)
+    await api.quote()
 
     captured_request = client_holder["client"].captured["json"]  # type: ignore[index]
-    assert captured_request == expected_payload
+    assert captured_request == EXPECTED_HARDCODED_QUOTE_PAYLOAD
 
 
 @pytest.mark.asyncio
