@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,6 +13,7 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from starlette.concurrency import run_in_threadpool
+from urllib.parse import urlparse
 
 from ..config import Settings, get_settings
 from ..core.orchestrator import ConversationalOrchestrator
@@ -69,6 +71,29 @@ def _build_flow(settings: Settings) -> Flow:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Missing GOOGLE_REDIRECT_URI environment variable.",
+        )
+
+    parsed_uri = urlparse(redirect_uri)
+    if parsed_uri.scheme == "http":
+        if parsed_uri.hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            if os.environ.get("OAUTHLIB_INSECURE_TRANSPORT") != "1":
+                os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+                logger.warning(
+                    "gmail_portal.insecure_transport_enabled",
+                    redirect_uri=redirect_uri,
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    "GOOGLE_REDIRECT_URI uses plain HTTP. For non-local addresses, configure HTTPS "
+                    "or set a secure redirect URI."
+                ),
+            )
+    elif parsed_uri.scheme != "https":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="GOOGLE_REDIRECT_URI must start with https:// or http://localhost.",
         )
 
     client_config = {
