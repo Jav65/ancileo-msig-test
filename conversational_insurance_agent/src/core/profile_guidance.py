@@ -93,15 +93,29 @@ def _serialize_trip(trip: TripDetails) -> Dict[str, Any]:
 def _build_tool_hints(client: ClientDatum, trip: TripDetails) -> Dict[str, Any]:
     metadata = trip.metadata or {}
     activity = metadata.get("activity") or (client.interests[0] if client.interests else None)
+    risk_inputs: Dict[str, Any] = {
+        "destination": trip.destination,
+        "activity": activity,
+    }
+    if trip.start_date:
+        risk_inputs["departure_date"] = trip.start_date.isoformat()
+        risk_inputs["month"] = trip.start_date.strftime("%b")
+    if client.personal_info.date_of_birth:
+        risk_inputs["date_of_birth"] = client.personal_info.date_of_birth.isoformat()
+
     tool_inputs: Dict[str, Any] = {
+        "travel_risk_prediction": risk_inputs,
         "claims_recommendation": {
             "destination": trip.destination,
             "activity": activity,
             "trip_cost": trip.trip_cost,
-        }
+        },
     }
 
-    return {name: {k: v for k, v in params.items() if v is not None} for name, params in tool_inputs.items()}
+    return {
+        name: {k: v for k, v in params.items() if v is not None}
+        for name, params in tool_inputs.items()
+    }
 
 
 def _build_instructions(status: str) -> List[str]:
@@ -109,17 +123,18 @@ def _build_instructions(status: str) -> List[str]:
         "Surface the integration data, confirm accuracy with the traveller, and note any missing items.",
         "Always keep responses concise, empathetic, and cite policy sources in answers.",
         "Never initiate payment until all required fields are present and the traveller has explicitly confirmed the profile.",
+        "Before your final reply, summarise the latest `travel_risk_prediction` insights (probability, expected claim amount) to justify recommendations.",
     ]
 
     if status == "rich":
         instructions.insert(
             0,
-            "Profile is complete. After confirmation, immediately run `claims_recommendation` and follow up with `policy_research` to produce tailored options.",
+            "Profile is complete. After confirmation, call `travel_risk_prediction`, then `claims_recommendation`, and finally `policy_research` to produce grounded options.",
         )
     else:
         instructions.insert(
             0,
-            "Profile is incomplete. Ask targeted questions to capture the missing information before running recommendation tools.",
+            "Profile is incomplete. Ask targeted questions to capture the missing information (age, trip dates, destination, activities) so you can run `travel_risk_prediction` before advising plans.",
         )
 
     return instructions

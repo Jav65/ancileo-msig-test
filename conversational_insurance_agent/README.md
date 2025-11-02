@@ -41,6 +41,7 @@ conversational_insurance_agent/
    - `GROQ_VISION_MODEL` (defaults to `llama-3.2-90b-vision-preview`)
    - `STRIPE_API_KEY` and `STRIPE_WEBHOOK_SECRET` (leave blank to rely on the provided payments microservice)
    - `REDIS_URL`, `VECTOR_DB_PATH`, `CLAIMS_DATA_PATH` as needed
+   - `CLAIMS_DB_HOST`, `CLAIMS_DB_PORT`, `CLAIMS_DB_NAME`, `CLAIMS_DB_USER`, `CLAIMS_DB_PASSWORD`, `CLAIMS_DB_TABLE` if you prefer training the risk predictor directly from Postgres
    - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` for WhatsApp (or `TWILIO_API_KEY`/`TWILIO_API_SECRET` if you prefer API keys)
    - `ANCILEO_API_KEY` to access the Ancileo pricing & purchase APIs (override `ANCILEO_BASE_URL` and `ANCILEO_DEFAULT_*` for non-default environments)
    - `SESSION_SECRET` to secure the partner portal cookies (defaults to a development fallback)

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+from datetime import UTC, date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from groq import Groq
 
 from ..config import get_settings
-from ..state.client_context import ClientDatum
+from ..state.client_context import ClientDatum, select_preferred_trip
 from ..state.session_store import ConversationSessionStore
 from ..utils.logging import logger
 from .profile_guidance import compose_profile_guidance
@@ -44,6 +46,8 @@ class ConversationalOrchestrator:
         clients = self._session_store.get_clients(session_id)
         guidance = compose_profile_guidance(clients)
 
+        risk_payload = await self._maybe_prime_travel_risk_prediction(session_id, clients)
+
         tool_descriptions = "\n".join(
             f"- {tool.name}: {tool.description} | Schema: {json.dumps(tool.schema)}"
             for tool in self._tool_map.values()
@@ -72,6 +76,9 @@ class ConversationalOrchestrator:
                 status=guidance.status,
             )
             system_message["content"] += "\n\n" + guidance.summary_text
+
+        if risk_payload:
+            system_message["content"] += "\n\n" + self._render_risk_summary(risk_payload)
 
         messages: List[Dict[str, str]] = [system_message, *history]
         messages.append({"role": "user", "content": user_message})
@@ -242,6 +249,149 @@ class ConversationalOrchestrator:
             "tool_result": last_result,
             "tool_runs": tool_runs,
         }
+
+    async def _maybe_prime_travel_risk_prediction(
+        self,
+        session_id: str,
+        clients: List[ClientDatum],
+    ) -> Optional[Dict[str, Any]]:
+        tool_spec = self._tool_map.get("travel_risk_prediction")
+        if tool_spec is None or not clients:
+            return None
+
+        inputs = self._extract_risk_inputs(clients)
+        if not inputs:
+            return None
+
+        cached = self._session_store.get_tool_result(session_id, "travel_risk_prediction")
+        if isinstance(cached, dict) and cached.get("inputs") == inputs:
+            return cached
+
+        result = await tool_spec.arun(**inputs)
+        payload = {
+            "inputs": inputs,
+            "result": result,
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+        self._session_store.set_tool_result(session_id, "travel_risk_prediction", payload)
+        logger.info(
+            "orchestrator.travel_risk_prediction.ran",
+            session_id=session_id,
+            destination=inputs.get("destination"),
+            status=result.get("status") if isinstance(result, dict) else "unknown",
+        )
+        return payload
+
+    def _extract_risk_inputs(self, clients: List[ClientDatum]) -> Optional[Dict[str, Any]]:
+        for client in clients:
+            trip = select_preferred_trip(client)
+            if trip is None or not trip.destination:
+                continue
+
+            payload: Dict[str, Any] = {"destination": trip.destination}
+
+            activity = (trip.metadata or {}).get("activity")
+            if not activity and client.interests:
+                activity = client.interests[0]
+            if activity:
+                payload["activity"] = activity
+
+            if trip.start_date:
+                payload["departure_date"] = trip.start_date.isoformat()
+                payload["month"] = trip.start_date.strftime("%b")
+
+            if client.personal_info.date_of_birth:
+                payload["date_of_birth"] = client.personal_info.date_of_birth.isoformat()
+                age = self._compute_age(
+                    client.personal_info.date_of_birth,
+                    trip.start_date,
+                )
+                if age is not None:
+                    payload["age"] = age
+
+            return payload
+        return None
+
+    @staticmethod
+    def _compute_age(dob: Optional[date], reference: Optional[date]) -> Optional[int]:
+        if dob is None:
+            return None
+        ref = reference or date.today()
+        years = ref.year - dob.year
+        if (ref.month, ref.day) < (dob.month, dob.day):
+            years -= 1
+        return max(1, years)
+
+    def _render_risk_summary(self, payload: Dict[str, Any]) -> str:
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return "[Claims Risk Forecast]\nstatus: unavailable"
+
+        prediction = result.get("prediction", {})
+        input_payload = result.get("input", {})
+        model_state = result.get("model_state") or {}
+        status = result.get("status", "unknown")
+
+        probability_text = self._format_probability(prediction.get("claim_probability"))
+        expected_amount_text = self._format_currency(prediction.get("expected_amount"))
+
+        lines = ["[Claims Risk Forecast]"]
+        lines.append(f"status: {status}")
+
+        destination = prediction.get("destination") or input_payload.get("destination")
+        if destination:
+            lines.append(f"destination: {destination}")
+
+        month = prediction.get("month") or input_payload.get("month")
+        if month:
+            lines.append(f"travel_month: {month}")
+
+        if input_payload.get("age"):
+            lines.append(f"traveller_age: {input_payload['age']}")
+
+        activity = input_payload.get("activity")
+        if activity:
+            lines.append(f"primary_activity: {activity}")
+
+        if probability_text:
+            lines.append(f"claim_probability: {probability_text}")
+
+        if expected_amount_text:
+            lines.append(f"expected_claim_amount: {expected_amount_text}")
+
+        refreshed_at = model_state.get("refreshed_at") if isinstance(model_state, dict) else None
+        claim_rows = model_state.get("claim_rows") if isinstance(model_state, dict) else None
+        if refreshed_at:
+            lines.append(f"model_refreshed_at: {refreshed_at}")
+        if claim_rows:
+            lines.append(f"claim_records_used: {claim_rows}")
+
+        if payload.get("generated_at"):
+            lines.append(f"generated_at: {payload['generated_at']}")
+
+        lines.append("source: travel_risk_prediction tool")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_probability(value: Any) -> Optional[str]:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(numeric) or math.isinf(numeric):
+            return None
+        return f"{numeric:.1%}"
+
+    @staticmethod
+    def _format_currency(value: Any) -> Optional[str]:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(numeric) or math.isinf(numeric):
+            return None
+        return f"${numeric:,.2f}"
 
     @staticmethod
     def _compose_tool_fallback_reply(tool_runs: List[Dict[str, Any]]) -> str:

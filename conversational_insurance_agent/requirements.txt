@@ -18,6 +18,9 @@ pypdf
 pandas
 numpy
 scikit-learn
+xgboost
+SQLAlchemy>=2.0
+psycopg2-binary
 orjson
 structlog
 stripe

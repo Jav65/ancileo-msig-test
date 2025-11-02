@@ -7,6 +7,7 @@ from ..agents import PolicyResearchAgent
 from ..services.payment import PaymentGateway
 from ..services.travel_insurance import AncileoTravelAPI
 from ..tools.claims_insights import ClaimsInsightTool
+from ..tools.travel_risk_predictor import TravelRiskPredictorTool
 from ..tools.document_intelligence import DocumentIntelligenceTool
 from ..utils.logging import logger
 from .orchestrator import ConversationalOrchestrator
@@ -16,6 +17,7 @@ from .tooling import ToolSpec
 def build_orchestrator() -> ConversationalOrchestrator:
     policy_agent = PolicyResearchAgent()
     claims_tool = ClaimsInsightTool()
+    risk_tool = TravelRiskPredictorTool()
     doc_tool = DocumentIntelligenceTool()
     payment_gateway = PaymentGateway()
     ancileo_api = AncileoTravelAPI()
@@ -73,6 +75,52 @@ def build_orchestrator() -> ConversationalOrchestrator:
                 destination=destination,
                 activity=activity,
                 trip_cost=trip_cost,
+            ),
+        ),
+        ToolSpec(
+            name="travel_risk_prediction",
+            description=(
+                "Predict claim probability and expected claim amount using paid claims history. "
+                "Always call this before finalising a response when traveller age, destination, "
+                "and travel month are known."
+            ),
+            schema={
+                "type": "object",
+                "properties": {
+                    "destination": {
+                        "type": "string",
+                        "description": "Country or region of travel",
+                    },
+                    "activity": {
+                        "type": "string",
+                        "description": "Primary travel activity or purpose",
+                    },
+                    "departure_date": {
+                        "type": "string",
+                        "description": "Departure date in ISO format (YYYY-MM-DD)",
+                    },
+                    "month": {
+                        "type": "string",
+                        "description": "Travel month abbreviation such as 'Jan'",
+                    },
+                    "age": {
+                        "type": "integer",
+                        "description": "Traveller age at the time of departure",
+                    },
+                    "date_of_birth": {
+                        "type": "string",
+                        "description": "Traveller date of birth in ISO format",
+                    },
+                },
+                "required": ["destination"],
+            },
+            handler=lambda destination, activity=None, departure_date=None, month=None, age=None, date_of_birth=None: risk_tool.predict(
+                destination=destination,
+                activity=activity,
+                departure_date=departure_date,
+                month=month,
+                age=age,
+                date_of_birth=date_of_birth,
             ),
         ),
         ToolSpec(
