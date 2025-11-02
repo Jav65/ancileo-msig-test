@@ -113,6 +113,33 @@ def _load_credentials(request: Request, settings: Settings) -> Credentials:
     return credentials
 
 
+async def _complete_oauth_login(request: Request, settings: Settings) -> None:
+    stored_state = request.session.get(SESSION_STATE_KEY)
+    incoming_state = request.query_params.get("state")
+    if not stored_state or stored_state != incoming_state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+
+    flow = _build_flow(settings)
+    authorization_response = str(request.url)
+    try:
+        flow.fetch_token(authorization_response=authorization_response)
+    except Exception as exc:  # pragma: no cover - network interaction
+        logger.exception("gmail_portal.oauth_token_failed", error=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth token exchange failed") from exc
+
+    credentials = flow.credentials
+    request.session[SESSION_CREDENTIALS_KEY] = json.loads(credentials.to_json())
+
+    profile = await _fetch_userinfo(credentials)
+    request.session[SESSION_PROFILE_KEY] = profile
+    request.session[SESSION_CHANNEL_KEY] = DEFAULT_CHANNEL
+    request.session.pop(SESSION_CLIENT_KEY, None)
+    request.session.pop(SESSION_STATE_KEY, None)
+    _ensure_session_id(request, profile)
+
+    logger.info("gmail_portal.login", email=profile.get("email"), sub=profile.get("sub"))
+
+
 def _ensure_session_id(request: Request, profile: Dict[str, Any]) -> str:
     session_id = request.session.get(SESSION_ID_KEY)
     if session_id:
@@ -199,29 +226,7 @@ async def initiate_oauth(request: Request, settings: Settings = Depends(get_sett
 
 @router.get("/callback")
 async def oauth_callback(request: Request, settings: Settings = Depends(get_settings)) -> RedirectResponse:
-    stored_state = request.session.get(SESSION_STATE_KEY)
-    incoming_state = request.query_params.get("state")
-    if not stored_state or stored_state != incoming_state:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
-
-    flow = _build_flow(settings)
-    authorization_response = str(request.url)
-    try:
-        flow.fetch_token(authorization_response=authorization_response)
-    except Exception as exc:  # pragma: no cover - network interaction
-        logger.exception("gmail_portal.oauth_token_failed", error=str(exc))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth token exchange failed") from exc
-
-    credentials = flow.credentials
-    request.session[SESSION_CREDENTIALS_KEY] = json.loads(credentials.to_json())
-
-    profile = await _fetch_userinfo(credentials)
-    request.session[SESSION_PROFILE_KEY] = profile
-    request.session[SESSION_CHANNEL_KEY] = DEFAULT_CHANNEL
-    request.session.pop(SESSION_CLIENT_KEY, None)
-    _ensure_session_id(request, profile)
-
-    logger.info("gmail_portal.login", email=profile.get("email"), sub=profile.get("sub"))
+    await _complete_oauth_login(request, settings)
     return RedirectResponse(url="/gmail/chat", status_code=status.HTTP_302_FOUND)
 
 
@@ -231,6 +236,10 @@ async def chat_page(
     settings: Settings = Depends(get_settings),
     orchestrator: Optional[ConversationalOrchestrator] = Depends(get_portal_orchestrator),
 ) -> HTMLResponse:
+    if "code" in request.query_params:
+        await _complete_oauth_login(request, settings)
+        return RedirectResponse(url=request.url.path, status_code=status.HTTP_302_FOUND)
+
     credentials = _load_credentials(request, settings)
     profile = request.session.get(SESSION_PROFILE_KEY)
     if not profile:
