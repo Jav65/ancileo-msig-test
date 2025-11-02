@@ -24,3 +24,8 @@ stripe
 PyYAML
 pytest
 jinja2
+google-auth
+google-auth-oauthlib
+google-api-python-client
+google-auth-httplib2
+beautifulsoup4

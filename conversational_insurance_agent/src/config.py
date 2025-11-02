@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     ancileo_default_language: str = Field("en", env="ANCILEO_DEFAULT_LANGUAGE")
     ancileo_default_channel: str = Field("white-label", env="ANCILEO_DEFAULT_CHANNEL")
     ancileo_default_device: str = Field("DESKTOP", env="ANCILEO_DEFAULT_DEVICE")
+    google_client_id: str = Field("", env="GOOGLE_CLIENT_ID")
+    google_client_secret: str = Field("", env="GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: str = Field("", env="GOOGLE_REDIRECT_URI")
 
     class Config:
         env_file = BASE_DIR / ".env"

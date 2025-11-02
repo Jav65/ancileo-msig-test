@@ -37,6 +37,7 @@ from .services.policy_taxonomy import IngestCfg, PolicyIngestor, extract_all_lay
 from .state.client_context import ClientDatum
 from .utils.logging import configure_logging, logger
 from .web import mount_integration_static, router as integration_router
+from .gmail_portal import mount_static as mount_gmail_static, router as gmail_router
 
 
 class ChatRequest(BaseModel):
@@ -99,7 +100,9 @@ app = FastAPI(title="Ancileo Conversational Insurance Platform", version="0.1.0"
 settings = get_settings()
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax")
 mount_integration_static(app)
+mount_gmail_static(app)
 app.include_router(integration_router)
+app.include_router(gmail_router)
 
 _orchestrator: ConversationalOrchestrator | None = None
 _media_ingestor: GroqMediaIngestor | None = None

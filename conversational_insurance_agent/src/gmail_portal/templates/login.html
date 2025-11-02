@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gmail Travel Assistant &middot; Sign In</title>
+    <link rel="stylesheet" href="/gmail/static/styles.css" />
+  </head>
+  <body class="page page--login">
+    <main class="login-card">
+      <h1>Connect Your Gmail</h1>
+      <p class="lead">
+        Sign in with Google so we can scan your travel confirmations and personalise the insurance assistant.
+      </p>
+
+      {% if error %}
+      <div class="alert alert--error">{{ error }}</div>
+      {% endif %}
+
+      <a class="button button--primary" href="/gmail/authorize">
+        <img
+          class="button__icon"
+          src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+          alt="Google"
+          width="24"
+          height="24"
+        />
+        Continue with Google
+      </a>
+    </main>
+  </body>
+</html>
