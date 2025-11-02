@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..agents import PolicyResearchAgent
 from ..services.payment import PaymentGateway
+from ..services.travel_insurance import AncileoTravelAPI
 from ..tools.claims_insights import ClaimsInsightTool
 from ..tools.document_intelligence import DocumentIntelligenceTool
 from ..utils.logging import logger
@@ -16,6 +17,7 @@ def build_orchestrator() -> ConversationalOrchestrator:
     claims_tool = ClaimsInsightTool()
     doc_tool = DocumentIntelligenceTool()
     payment_gateway = PaymentGateway()
+    ancileo_api = AncileoTravelAPI()
 
     tools: List[ToolSpec] = [
         ToolSpec(
@@ -94,18 +96,226 @@ def build_orchestrator() -> ConversationalOrchestrator:
             handler=lambda file_path: doc_tool.parse_trip_document(file_path=file_path),
         ),
         ToolSpec(
-            name="payment_checkout",
-            description="Create and monitor a payment checkout session for purchasing a travel insurance plan.",
+            name="travel_insurance_quote",
+            description=(
+                "Fetch live travel insurance quotation from the Ancileo API. "
+                "Always call this tool to obtain premiums before sharing price information."
+            ),
             schema={
                 "type": "object",
                 "properties": {
-                    "plan_code": {"type": "string"},
+                    "market": {
+                        "type": "string",
+                        "description": "Market code such as 'SG'. Defaults to ANCILEO_DEFAULT_MARKET.",
+                    },
+                    "languageCode": {
+                        "type": "string",
+                        "description": "Language preference, e.g. 'en'. Defaults to ANCILEO_DEFAULT_LANGUAGE.",
+                    },
+                    "channel": {
+                        "type": "string",
+                        "description": "Distribution channel identifier, defaults to ANCILEO_DEFAULT_CHANNEL.",
+                    },
+                    "deviceType": {
+                        "type": "string",
+                        "description": "Device context such as 'DESKTOP'. Defaults to ANCILEO_DEFAULT_DEVICE.",
+                    },
+                    "context": {
+                        "type": "object",
+                        "description": "Trip context required by the pricing endpoint.",
+                        "properties": {
+                            "tripType": {
+                                "type": "string",
+                                "description": "'ST' for single trip or 'RT' for round trip (case insensitive variants accepted).",
+                            },
+                            "departureDate": {
+                                "type": "string",
+                                "description": "Departure date in YYYY-MM-DD format.",
+                            },
+                            "returnDate": {
+                                "type": "string",
+                                "description": "Return date in YYYY-MM-DD format (required for round trips).",
+                            },
+                            "departureCountry": {
+                                "type": "string",
+                                "description": "ISO country code where the trip starts.",
+                            },
+                            "arrivalCountry": {
+                                "type": "string",
+                                "description": "ISO country code of the destination.",
+                            },
+                            "adultsCount": {
+                                "type": "integer",
+                                "description": "Number of adults travelling (must be >= 1).",
+                                "minimum": 1,
+                            },
+                            "childrenCount": {
+                                "type": "integer",
+                                "description": "Number of children travelling (defaults to 0).",
+                                "minimum": 0,
+                            },
+                        },
+                        "required": [
+                            "tripType",
+                            "departureDate",
+                            "departureCountry",
+                            "arrivalCountry",
+                            "adultsCount",
+                        ],
+                    },
+                },
+                "required": ["context"],
+            },
+            handler=ancileo_api.quote,
+            is_async=True,
+        ),
+        ToolSpec(
+            name="travel_insurance_purchase",
+            description=(
+                "Complete the policy issuance with the Ancileo purchase API after confirming payment. "
+                "Use the quoteId/offerId returned from travel_insurance_quote and traveller identity data."
+            ),
+            schema={
+                "type": "object",
+                "properties": {
+                    "market": {
+                        "type": "string",
+                        "description": "Market code (defaults to ANCILEO_DEFAULT_MARKET).",
+                    },
+                    "languageCode": {
+                        "type": "string",
+                        "description": "Language preference (defaults to ANCILEO_DEFAULT_LANGUAGE).",
+                    },
+                    "channel": {
+                        "type": "string",
+                        "description": "Distribution channel (defaults to ANCILEO_DEFAULT_CHANNEL).",
+                    },
+                    "quoteId": {
+                        "type": "string",
+                        "description": "Quote UUID returned from the pricing step.",
+                    },
+                    "purchaseOffers": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "productType": {"type": "string"},
+                                "offerId": {"type": "string"},
+                                "productCode": {"type": "string"},
+                                "unitPrice": {"type": "number"},
+                                "currency": {"type": "string"},
+                                "quantity": {"type": "integer", "minimum": 1},
+                                "totalPrice": {"type": "number"},
+                                "isSendEmail": {"type": "boolean"},
+                            },
+                            "required": [
+                                "productType",
+                                "offerId",
+                                "productCode",
+                                "unitPrice",
+                                "currency",
+                                "quantity",
+                                "totalPrice",
+                            ],
+                        },
+                    },
+                    "insureds": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "title": {"type": "string"},
+                                "firstName": {"type": "string"},
+                                "lastName": {"type": "string"},
+                                "nationality": {"type": "string"},
+                                "dateOfBirth": {"type": "string"},
+                                "passport": {"type": "string"},
+                                "email": {"type": "string"},
+                                "phoneType": {"type": "string"},
+                                "phoneNumber": {"type": "string"},
+                                "relationship": {"type": "string"},
+                            },
+                            "required": [
+                                "id",
+                                "title",
+                                "firstName",
+                                "lastName",
+                                "nationality",
+                                "dateOfBirth",
+                                "passport",
+                                "email",
+                                "phoneType",
+                                "phoneNumber",
+                                "relationship",
+                            ],
+                        },
+                    },
+                    "mainContact": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "firstName": {"type": "string"},
+                            "lastName": {"type": "string"},
+                            "nationality": {"type": "string"},
+                            "dateOfBirth": {"type": "string"},
+                            "passport": {"type": "string"},
+                            "email": {"type": "string"},
+                            "phoneType": {"type": "string"},
+                            "phoneNumber": {"type": "string"},
+                            "address": {"type": "string"},
+                            "city": {"type": "string"},
+                            "zipCode": {"type": "string"},
+                            "countryCode": {"type": "string"},
+                        },
+                        "required": [
+                            "id",
+                            "title",
+                            "firstName",
+                            "lastName",
+                            "nationality",
+                            "dateOfBirth",
+                            "passport",
+                            "email",
+                            "phoneType",
+                            "phoneNumber",
+                            "address",
+                            "city",
+                            "zipCode",
+                            "countryCode",
+                        ],
+                    },
+                },
+                "required": ["quoteId", "purchaseOffers", "insureds", "mainContact"],
+            },
+            handler=ancileo_api.purchase,
+            is_async=True,
+        ),
+        ToolSpec(
+            name="payment_checkout",
+            description=(
+                "Create and monitor a payment checkout session for purchasing a travel insurance plan. "
+                "Use the productCode returned from travel_insurance_quote as the plan_code and include quote/policy identifiers in metadata."
+            ),
+            schema={
+                "type": "object",
+                "properties": {
+                    "plan_code": {
+                        "type": "string",
+                        "description": "Use the pricing offer's productCode as the plan identifier.",
+                    },
                     "amount": {"type": "integer", "description": "Amount in minor currency units"},
                     "currency": {"type": "string", "default": "sgd"},
                     "success_url": {"type": "string"},
                     "cancel_url": {"type": "string"},
                     "customer_email": {"type": "string"},
-                    "metadata": {"type": "object"},
+                    "metadata": {
+                        "type": "object",
+                        "description": "Additional context such as quoteId, offerId, productCode, traveller info.",
+                    },
                 },
                 "required": ["plan_code", "amount", "currency", "success_url", "cancel_url"],
             },

@@ -57,7 +57,11 @@ class ConversationalOrchestrator:
                 "and always explain reasoning with citations when referencing policies.\n\n"
                 f"Channel: {channel}.\n"
                 f"Available Tools:\n{tool_descriptions}\n\n"
-                f"{TOOL_INSTRUCTION}"
+                f"{TOOL_INSTRUCTION}\n\n"
+                "Pricing guidance: never estimate or reuse premiums. Always call the "
+                "travel_insurance_quote tool (Ancileo pricing API) before sharing any price.\n"
+                "Fulfilment guidance: once payment_status confirms a successful checkout, "
+                "invoke travel_insurance_purchase with the quoteId/offer information to issue the policy."
             ),
         }
 
