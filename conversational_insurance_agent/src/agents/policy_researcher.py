@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict, cast
 
 import yaml
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 
