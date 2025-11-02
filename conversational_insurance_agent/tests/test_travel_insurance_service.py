@@ -11,7 +11,7 @@ EXPECTED_HARDCODED_QUOTE_PAYLOAD = {
     "deviceType": "DESKTOP",
     "context": {
         "tripType": "ST",
-        "departureDate": "2025-11-04",
+        "departureDate": "2025-11-01",
         "returnDate": "2025-11-15",
         "departureCountry": "SG",
         "arrivalCountry": "CN",
