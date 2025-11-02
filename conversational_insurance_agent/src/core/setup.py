@@ -55,7 +55,7 @@ def build_orchestrator() -> ConversationalOrchestrator:
                 },
                 "required": ["user_query", "recommended_products", "tiers"],
             },
-            handler=lambda user_query, recommended_products, tiers, chat_history=None: _run_policy_agent(
+            handler=lambda user_query, recommended_products=None, tiers=None, chat_history=None: _run_policy_agent(
                 policy_agent,
                 user_query=user_query,
                 recommended_products=recommended_products,
@@ -344,14 +344,46 @@ def _run_policy_agent(
     agent: PolicyResearchAgent,
     *,
     user_query: str,
-    recommended_products: List[str] | Sequence[str],
-    tiers: List[str] | Sequence[str],
+    recommended_products: Sequence[str] | str | None = None,
+    tiers: Sequence[str] | str | None = None,
     chat_history: Optional[Sequence[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
-    if isinstance(recommended_products, (str, bytes)):
-        recommended_products = [recommended_products]
-    if isinstance(tiers, (str, bytes)):
-        tiers = [tiers]
+    def _coerce_sequence(value: Sequence[str] | str | None) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, (str, bytes)):
+            return [str(value)]
+        if isinstance(value, Sequence):
+            return [str(item) for item in value if item is not None]
+        return [str(value)]
+
+    products_list = _coerce_sequence(recommended_products)
+    tiers_list = _coerce_sequence(tiers)
+
+    if not products_list:
+        logger.warning(
+            "policy_research_agent.missing_recommendations",
+            user_query=user_query,
+            raw_recommended=recommended_products,
+            raw_tiers=tiers,
+        )
+        return {
+            "products": [],
+            "reasoning": "No recommended products were provided to the policy research tool.",
+            "raw": None,
+        }
+
+    if not tiers_list:
+        tiers_list = [""] * len(products_list)
+    elif len(tiers_list) < len(products_list):
+        tiers_list = [*tiers_list, *([""] * (len(products_list) - len(tiers_list)))]
+    elif len(tiers_list) > len(products_list):
+        logger.info(
+            "policy_research_agent.trimming_tiers",
+            provided=len(tiers_list),
+            expected=len(products_list),
+        )
+        tiers_list = tiers_list[: len(products_list)]
 
     history_tuples: List[Tuple[str, str]] = []
     if chat_history:
@@ -367,8 +399,8 @@ def _run_policy_agent(
 
     result = agent.run(
         user_query=user_query,
-        recommended_products=list(recommended_products),
-        tiers=list(tiers),
+        recommended_products=products_list,
+        tiers=tiers_list,
         chat_history=history_tuples,
     )
 
